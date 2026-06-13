@@ -1,13 +1,12 @@
 /**
  * Payments 模块 — x402 支付/验证/结算
  *
- * 除 supported-info 外均需 API Key · CAT: [链上-支付]
- * 工具数: 4 (supported/verify/settle/status)
+ * 全部需 API Key · CAT: [链上-支付] · 工具数: 4
  */
 
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { onchainosApi, onchainosPrivateApi } from "../adapters/onchainos.js";
+import { onchainosPrivateApi } from "../adapters/onchainos.js";
 import { toResult, toError, AUTH_REQUIRED } from "../adapters/shared.js";
 import type { Auth } from "../adapters/shared.js";
 
@@ -17,16 +16,15 @@ export function registerPaymentsTools(server: McpServer, auth: Auth | null): voi
 
   server.tool(
     "onchainos_get_supported_payments",
-    "CAT:[链上-支付] | ## 功能：获取支持的网络和支付方案列表\n## 场景：Agent 付款前确认目标链和支付方式是否可用\n## 关键词：支付, payment, x402, 网络, scheme\n## 鉴权：PUBLIC — 公开接口，不需要 API Key\n## 风险：READ — 只读查询\n## 返回量：微小 ~2KB\n## 关联：本工具确认支付可用 → onchainos_verify_payment 验证 → onchainos_settle_payment 结算",
+    "CAT:[链上-支付] | ## 功能：获取支持的网络和支付方案列表\n## 场景：Agent 付款前确认目标链和支付方式是否可用\n## 关键词：支付, payment, x402, 网络, scheme\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：微小 ~2KB\n## 关联：本工具确认支付可用 → onchainos_verify_payment 验证 → onchainos_settle_payment 结算",
     {},
     { readOnlyHint: true },
     async () => {
+      if (!auth) return AUTH_REQUIRED("READ");
       try {
-        const data = await onchainosApi.getSupportedPaymentInfo();
+        const data = await onchainosPrivateApi.getSupportedPaymentInfo(auth);
         return toResult(data, {
-          nextSteps: [
-            { action: "验证支付请求", tool: "onchainos_verify_payment" },
-          ],
+          nextSteps: [{ action: "验证支付请求", tool: "onchainos_verify_payment" }],
         });
       } catch (e) { return toError(e); }
     },
@@ -36,7 +34,7 @@ export function registerPaymentsTools(server: McpServer, auth: Auth | null): voi
 
   server.tool(
     "onchainos_verify_payment",
-    "CAT:[链上-支付] | ## 功能：验证支付请求的有效性（签名/金额/收款方）\n## 场景：收到支付请求后，校验其合法性再决定是否付款\n## 关键词：支付验证, verify payment, 校验, 签名验证\n## 参数：\n##   - paymentRequest: 支付请求原始数据（JSON 字符串）\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：微小 ~1KB\n## 关联：onchainos_get_supported_payments 确认网络 → 本工具验证支付请求 → onchainos_settle_payment 结算",
+    "CAT:[链上-支付] | ## 功能：验证支付请求的有效性（签名/金额/收款方）\n## 场景：收到支付请求后，校验其合法性再决定是否付款\n## 关键词：支付验证, verify payment, 校验, 签名验证\n## 参数：\n##   - paymentRequest: 支付请求原始数据（JSON 字符串）\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：微小 ~1KB\n## 关联：onchainos_get_supported_payments 确认网络 → 本工具验证 → onchainos_settle_payment 结算",
     {
       paymentRequest: z.string().describe("支付请求数据（JSON 字符串）"),
     },
@@ -48,9 +46,7 @@ export function registerPaymentsTools(server: McpServer, auth: Auth | null): voi
         try { body = JSON.parse(paymentRequest); } catch { body = { raw: paymentRequest }; }
         const data = await onchainosPrivateApi.verifyPayment(auth, body);
         return toResult(data, {
-          nextSteps: [
-            { action: "执行结算", tool: "onchainos_settle_payment", condition: "验证通过后" },
-          ],
+          nextSteps: [{ action: "执行结算", tool: "onchainos_settle_payment", condition: "验证通过后" }],
         });
       } catch (e) { return toError(e); }
     },
@@ -72,9 +68,7 @@ export function registerPaymentsTools(server: McpServer, auth: Auth | null): voi
         try { body = JSON.parse(settlementData); } catch { body = { raw: settlementData }; }
         const data = await onchainosPrivateApi.settlePayment(auth, body);
         return toResult(data, {
-          nextSteps: [
-            { action: "查询结算状态", tool: "onchainos_get_settlement_status", params: {} },
-          ],
+          nextSteps: [{ action: "查询结算状态", tool: "onchainos_get_settlement_status" }],
         });
       } catch (e) { return toError(e); }
     },
@@ -84,15 +78,15 @@ export function registerPaymentsTools(server: McpServer, auth: Auth | null): voi
 
   server.tool(
     "onchainos_get_settlement_status",
-    "CAT:[链上-支付] | ## 功能：查询支付结算的处理状态\n## 场景：结算后跟踪付款是否完成、确认到账\n## 关键词：结算状态, settlement status, 付款确认, payment status\n## 参数：\n##   - settlementId: 结算 ID（结算接口返回的标识符）\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：微小 ~1KB\n## 关联：onchainos_settle_payment 结算 → 本工具查询状态",
+    "CAT:[链上-支付] | ## 功能：查询支付结算的处理状态\n## 场景：结算后跟踪付款是否完成、确认到账\n## 关键词：结算状态, settlement status, 付款确认, payment status\n## 参数：\n##   - txHash: 结算交易哈希\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：微小 ~1KB\n## 关联：onchainos_settle_payment 结算 → 本工具查询状态",
     {
-      settlementId: z.string().describe("结算 ID，结算接口返回的标识符"),
+      txHash: z.string().describe("结算交易哈希（txHash）"),
     },
     { readOnlyHint: true },
-    async ({ settlementId }) => {
+    async ({ txHash }) => {
       if (!auth) return AUTH_REQUIRED("READ");
       try {
-        const data = await onchainosPrivateApi.getSettlementStatus(auth, settlementId);
+        const data = await onchainosPrivateApi.getSettlementStatus(auth, txHash);
         return toResult(data);
       } catch (e) { return toError(e); }
     },

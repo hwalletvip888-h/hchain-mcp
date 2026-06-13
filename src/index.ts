@@ -59,8 +59,14 @@ async function main() {
     version: "0.1.0",
   });
 
-  // 注册所有模块的工具
-  registerMarketTools(server);
+  // 所有模块均需 API Key（OKX 2025年全端点鉴权）
+  if (!auth) {
+    console.error("[H-MCP] ⚠️  未配置 API Key。请设置 OKX_API_KEY / OKX_SECRET / OKX_PASSPHRASE 环境变量");
+    console.error("[H-MCP]     或运行: h-mcp -k <key> -s <secret> -p <passphrase>");
+    console.error("[H-MCP]     获取 Key: https://web3.okx.com/onchainos/dev-portal");
+  }
+
+  registerMarketTools(server, auth);
   registerTradeTools(server, auth);
   registerWalletTools(server, auth);
   registerGatewayTools(server, auth);

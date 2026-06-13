@@ -1,9 +1,10 @@
 /**
  * Onchain OS REST API 适配层
  *
- * 基于 OnchainOS-API对接规范.md §4 适配器模板
- * 公开端点 → onchainosApi (无 auth)
- * 鉴权端点 → onchainosPrivateApi (需 auth)
+ * 端点来源: https://web3.okx.com/onchainos/dev-docs
+ * ⚠️ 所有端点均需 API Key (2025年起)
+ * 公开端点 → onchainosApi (照样带 Key 但只做只读)
+ * 鉴权端点 → onchainosPrivateApi (读写)
  */
 
 import crypto from "node:crypto";
@@ -78,102 +79,134 @@ export interface Auth {
   passphrase: string;
 }
 
-// ── 公开接口 ──────────────────────────────────────────────────
+// ── 公共接口（实际也需要 API Key，但操作只读）────────────────
 
 export const onchainosApi = {
-  // Market — 行情价格
-  getPrice: (chainId: number, tokenAddress: string) =>
-    request<unknown>("GET", "/api/v6/dex/market/price", { params: { chainId, tokenAddress } }),
+  // Market — 搜索代币 GET
+  searchToken: (auth: Auth, keyword: string) =>
+    request<unknown[]>("GET", "/api/v6/dex/market/token/search", { params: { keyword }, auth }),
 
-  // Market — 搜索代币
-  searchToken: (keyword: string) =>
-    request<unknown[]>("GET", "/api/v6/dex/market/search", { params: { keyword } }),
+  // Market — 代币基本信息 POST
+  getTokenBasicInfo: (auth: Auth, chainIndex: number, tokenAddress: string) =>
+    request<unknown>("POST", "/api/v6/dex/market/token/basic-info", { body: { chainIndex, tokenAddress }, auth }),
 
-  // Market — K 线
-  getCandlesticks: (chainId: number, tokenAddress: string, period: string, after?: string, before?: string) =>
-    request<unknown[]>("GET", "/api/v6/dex/market/candlesticks", { params: { chainId, tokenAddress, period, after, before } }),
+  // Market — 实时价格 POST
+  getPrice: (auth: Auth, chainIndex: number, tokenAddress: string) =>
+    request<unknown>("POST", "/api/v6/dex/market/price", { body: { chainIndex, tokenAddress }, auth }),
 
-  // Market — K 线历史
-  getCandlesticksHistory: (chainId: number, tokenAddress: string, period: string) =>
-    request<unknown[]>("GET", "/api/v6/dex/market/candlesticks-history", { params: { chainId, tokenAddress, period } }),
+  // Market — 价格信息 POST（多代币批量查价）
+  getPriceInfo: (auth: Auth, chainIndex: number, tokenAddresses: string[]) =>
+    request<unknown>("POST", "/api/v6/dex/market/price-info", { body: { chainIndex, tokenAddresses }, auth }),
 
-  // Payments — 获取支持的支付方案和网络（公开）
-  getSupportedPaymentInfo: () =>
-    request<unknown>("GET", "/api/v6/dex/payments/supported-info"),
+  // Market — K 线 GET
+  getCandlesticks: (auth: Auth, chainIndex: number, tokenAddress: string, period: string, after?: string, before?: string) =>
+    request<unknown[]>("GET", "/api/v6/dex/market/candles", { params: { chainIndex, tokenAddress, period, after, before }, auth }),
 
-  // Market — 代币详细信息
-  getTokenInfo: (chainId: number, tokenAddress: string) =>
-    request<unknown>("GET", "/api/v6/dex/market/token-info", { params: { chainId, tokenAddress } }),
+  // Market — 历史K线 GET
+  getCandlesticksHistory: (auth: Auth, chainIndex: number, tokenAddress: string, period: string) =>
+    request<unknown[]>("GET", "/api/v6/dex/market/historical-candles", { params: { chainIndex, tokenAddress, period }, auth }),
 
-  // Trade — 支持的链
-  getSupportedChains: () =>
-    request<unknown[]>("GET", "/api/v6/dex/aggregator/supported-chains"),
+  // Market — 支持的市场链 GET
+  getMarketSupportedChains: (auth: Auth) =>
+    request<unknown[]>("GET", "/api/v6/dex/market/supported/chain", { auth }),
 
-  // Trade — 获取代币列表
-  getTokens: (chainId: number) =>
-    request<unknown[]>("GET", "/api/v6/dex/aggregator/tokens", { params: { chainId } }),
+  // Trade — 聚合器支持的链 GET
+  getSupportedChains: (auth: Auth) =>
+    request<unknown[]>("GET", "/api/v6/dex/aggregator/supported/chain", { auth }),
 
-  // Trade — 获取报价
-  getQuote: (params: Record<string, string | number>) =>
-    request<unknown>("GET", "/api/v6/dex/aggregator/quote", { params }),
+  // Trade — 获取代币列表 GET
+  getTokens: (auth: Auth, chainIndex: number) =>
+    request<unknown[]>("GET", "/api/v6/dex/aggregator/all-tokens", { params: { chainIndex }, auth }),
 
-  // Trade — 获取 Solana swap instructions
-  getSolanaSwapInstructions: (params: Record<string, unknown>) =>
-    request<unknown>("POST", "/api/v6/dex/aggregator/solana/swap-instructions", { body: params }),
+  // Trade — 获取流动性源 GET
+  getLiquidity: (auth: Auth, chainIndex: number) =>
+    request<unknown[]>("GET", "/api/v6/dex/aggregator/get-liquidity", { params: { chainIndex }, auth }),
+
+  // Trade — 获取报价 GET
+  getQuote: (auth: Auth, params: Record<string, string | number>) =>
+    request<unknown>("GET", "/api/v6/dex/aggregator/quote", { params, auth }),
+
+  // Trade — 授权交易 GET
+  approveTransaction: (auth: Auth, params: Record<string, string | number>) =>
+    request<unknown>("GET", "/api/v6/dex/aggregator/approve-transaction", { params, auth }),
+
+  // Trade — Solana swap instructions GET
+  getSolanaSwapInstructions: (auth: Auth, params: Record<string, string | number>) =>
+    request<unknown>("GET", "/api/v6/dex/aggregator/swap-instruction", { params, auth }),
+
+  // Trade — Swap GET
+  swap: (auth: Auth, params: Record<string, string | number>) =>
+    request<unknown>("GET", "/api/v6/dex/aggregator/swap", { params, auth }),
+
+  // Trade — 交易状态 GET
+  getSwapHistory: (auth: Auth, chainIndex: number, txHash: string) =>
+    request<unknown>("GET", "/api/v6/dex/aggregator/history", { params: { chainIndex, txHash }, auth }),
 };
 
-// ── 鉴权接口 ──────────────────────────────────────────────────
+// ── 鉴权接口（读写操作）──────────────────────────────────────
 
 export const onchainosPrivateApi = {
-  // Wallet — 余额查询
-  getBalance: (auth: Auth, address: string, chainId: number) =>
-    request<unknown[]>("GET", "/api/v6/dex/asset/balance", { params: { address, chainId }, auth }),
+  // Wallet — 余额总览 GET
+  getTotalValue: (auth: Auth, address: string, chains: string) =>
+    request<unknown>("GET", "/api/v6/dex/balance/total-value-by-address", { params: { address, chains }, auth }),
 
-  // Wallet — 交易历史
-  getTransactionHistory: (auth: Auth, address: string, chainId: number, limit?: number) =>
-    request<unknown[]>("GET", "/api/v6/dex/asset/transaction-history", { params: { address, chainId, limit }, auth }),
+  // Wallet — 所有代币余额 GET
+  getAllTokenBalances: (auth: Auth, address: string, chains: string) =>
+    request<unknown[]>("GET", "/api/v6/dex/balance/all-token-balances-by-address", { params: { address, chains }, auth }),
 
-  // Wallet — 交易详情
-  getTransactionDetail: (auth: Auth, txHash: string, chainId: number) =>
-    request<unknown>("GET", "/api/v6/dex/asset/transaction-detail", { params: { txHash, chainId }, auth }),
+  // Wallet — 特定代币余额 POST
+  getSpecificTokenBalance: (auth: Auth, body: { address: string; chainIndex: number; tokenAddress: string }) =>
+    request<unknown>("POST", "/api/v6/dex/balance/token-balances-by-address", { body, auth }),
 
-  // Gateway — Gas 价格
-  getGasPrice: (auth: Auth, chainId: number) =>
-    request<unknown>("GET", "/api/v6/dex/onchain-gateway/gas-price", { params: { chainId }, auth }),
+  // Wallet — 支持的钱包链 GET
+  getBalanceSupportedChains: (auth: Auth) =>
+    request<unknown[]>("GET", "/api/v6/dex/balance/supported/chain", { auth }),
 
-  // Gateway — Gas 限制
-  getGasLimit: (auth: Auth, params: Record<string, unknown>) =>
-    request<unknown>("POST", "/api/v6/dex/onchain-gateway/gas-limit", { body: params, auth }),
+  // Wallet — 交易历史 GET
+  getTransactionsByAddress: (auth: Auth, addresses: string, chains: string, limit?: number) =>
+    request<unknown[]>("GET", "/api/v6/dex/post-transaction/transactions-by-address", { params: { addresses, chains, limit }, auth }),
 
-  // Gateway — 模拟交易
-  simulateTransaction: (auth: Auth, params: Record<string, unknown>) =>
-    request<unknown>("POST", "/api/v6/dex/onchain-gateway/simulate-transaction", { body: params, auth }),
+  // Wallet — 交易详情 GET
+  getTransactionDetail: (auth: Auth, txHash: string, chainIndex: number) =>
+    request<unknown>("GET", "/api/v6/dex/post-transaction/transaction-detail-by-txhash", { params: { txHash, chainIndex }, auth }),
 
-  // Gateway — 广播交易
-  broadcastTransaction: (auth: Auth, params: Record<string, unknown>) =>
-    request<unknown>("POST", "/api/v6/dex/onchain-gateway/broadcast-transaction", { body: params, auth }),
+  // Gateway — Pre-transaction 支持的链 GET
+  getPreTxSupportedChains: (auth: Auth) =>
+    request<unknown[]>("GET", "/api/v6/dex/pre-transaction/supported/chain", { auth }),
 
-  // Gateway — 查询订单状态
-  getOrderStatus: (auth: Auth, orderId: string) =>
-    request<unknown>("GET", "/api/v6/dex/onchain-gateway/orders", { params: { orderId }, auth }),
+  // Gateway — Gas 价格 GET
+  getGasPrice: (auth: Auth, chainIndex: number) =>
+    request<unknown>("GET", "/api/v6/dex/pre-transaction/gas-price", { params: { chainIndex }, auth }),
 
-  // Trade — 授权交易 (approve)
-  approveTransaction: (auth: Auth, params: Record<string, unknown>) =>
-    request<unknown>("POST", "/api/v6/dex/aggregator/approve-transaction", { body: params, auth }),
+  // Gateway — Gas 限制 POST
+  getGasLimit: (auth: Auth, body: Record<string, unknown>) =>
+    request<unknown>("POST", "/api/v6/dex/pre-transaction/gas-limit", { body, auth }),
 
-  // Trade — Swap
-  swap: (auth: Auth, params: Record<string, unknown>) =>
-    request<unknown>("POST", "/api/v6/dex/aggregator/swap", { body: params, auth }),
+  // Gateway — 模拟交易 GET
+  simulateTransaction: (auth: Auth, params: Record<string, string | number>) =>
+    request<unknown>("GET", "/api/v6/dex/pre-transaction/simulate", { params, auth }),
 
-  // Payments — 支付验证
-  verifyPayment: (auth: Auth, params: Record<string, unknown>) =>
-    request<unknown>("POST", "/api/v6/dex/payments/verify", { body: params, auth }),
+  // Gateway — 广播交易 POST
+  broadcastTransaction: (auth: Auth, body: Record<string, unknown>) =>
+    request<unknown>("POST", "/api/v6/dex/pre-transaction/broadcast-transaction", { body, auth }),
 
-  // Payments — 结算
-  settlePayment: (auth: Auth, params: Record<string, unknown>) =>
-    request<unknown>("POST", "/api/v6/dex/payments/settle", { body: params, auth }),
+  // Gateway — 查询订单 GET
+  getOrders: (auth: Auth, address: string, chainIndex: number) =>
+    request<unknown>("GET", "/api/v6/dex/post-transaction/orders", { params: { address, chainIndex }, auth }),
 
-  // Payments — 查询结算状态
-  getSettlementStatus: (auth: Auth, settlementId: string) =>
-    request<unknown>("GET", "/api/v6/dex/payments/settlement", { params: { settlementId }, auth }),
+  // Payments — 支持的支付信息 GET
+  getSupportedPaymentInfo: (auth: Auth) =>
+    request<unknown>("GET", "/api/v6/pay/x402/supported", { auth }),
+
+  // Payments — 验证支付 POST
+  verifyPayment: (auth: Auth, body: Record<string, unknown>) =>
+    request<unknown>("POST", "/api/v6/pay/x402/verify", { body, auth }),
+
+  // Payments — 结算 POST
+  settlePayment: (auth: Auth, body: Record<string, unknown>) =>
+    request<unknown>("POST", "/api/v6/pay/x402/settle", { body, auth }),
+
+  // Payments — 结算状态 GET
+  getSettlementStatus: (auth: Auth, txHash: string) =>
+    request<unknown>("GET", "/api/v6/pay/x402/settle/status", { params: { txHash }, auth }),
 };
