@@ -17,15 +17,16 @@ export function registerMarketTools(server: McpServer, auth: Auth | null): void 
 
   server.tool(
     "onchainos_search_token",
-    "CAT:[链上-行情] | ## 功能：跨链搜索代币，按名称/符号/合约地址模糊匹配\n## 场景：用于 Agent 查找代币、验证合约地址、发现链上资产\n## 关键词：搜索, 代币, token, search, address\n## 参数：\n##   - keyword: 搜索关键词，支持代币名称、符号（BTC/ETH）或合约地址，至少 2 字符\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询，Agent 可自动调用\n## 返回量：中等 ~30KB\n## 关联：本工具搜索代币 → onchainos_get_token_info 查看详情 → onchainos_get_price 查价",
+    "CAT:[链上-行情] | ## 功能：跨链搜索代币，按名称/符号/合约地址模糊匹配\n## 场景：用于 Agent 查找代币、验证合约地址、发现链上资产\n## 关键词：搜索, 代币, token, search, address\n## 参数：\n##   - search: 搜索关键词，支持代币名称、符号（BTC/ETH）或合约地址，至少 2 字符\n##   - chains: 链索引列表，逗号分隔（如 \"1,56,137\"），不填查所有链\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询，Agent 可自动调用\n## 返回量：中等 ~30KB\n## 关联：本工具搜索代币 → onchainos_get_token_info 查看详情 → onchainos_get_price 查价",
     {
-      keyword: z.string().min(2).describe("搜索关键词：代币名称、符号（如BTC/ETH）或完整合约地址"),
+      search: z.string().min(2).describe("搜索关键词：代币名称、符号（如BTC/ETH）或完整合约地址"),
+      chains: z.string().optional().describe("链索引列表，逗号分隔（如 '1,56,137'）。不填则查所有支持的链"),
     },
     { readOnlyHint: true },
-    async ({ keyword }) => {
+    async ({ search, chains }) => {
       if (!auth) return AUTH_REQUIRED("READ");
       try {
-        const data = await onchainosApi.searchToken(auth, keyword);
+        const data = await onchainosApi.searchToken(auth, search, chains);
         return toResult(data);
       } catch (e) { return toError(e); }
     },
@@ -62,19 +63,19 @@ export function registerMarketTools(server: McpServer, auth: Auth | null): void 
     "CAT:[链上-行情] | ## 功能：获取指定代币的 K 线数据，支持实时最近1000根或完整历史\n## 场景：用于价格走势分析、技术指标计算、交易信号生成、深度回测\n## 关键词：K线, candlestick, 走势图, OHLCV, 技术分析, 回测\n## 参数：\n##   - chainIndex: 链索引\n##   - tokenAddress: 代币合约地址\n##   - period: K线周期。1m/5m/15m/30m/1H/4H/1D/1W/1M\n##   - mode: \"live\"=最近1000根带翻页（默认） | \"history\"=完整历史数据\n##   - after: 起始时间ISO 8601（live模式翻页用）\n##   - before: 结束时间ISO 8601（默认当前）\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：大 ~100KB\n## 关联：onchainos_get_price 获取实时价 → 本工具获取 K 线 → onchainos_get_quote 交易",
     {
       chainIndex: z.number().int().describe("链索引"),
-      tokenAddress: z.string().describe("代币合约地址"),
+      tokenContractAddress: z.string().describe("代币合约地址"),
       period: z.enum(["1m", "5m", "15m", "30m", "1H", "4H", "1D", "1W", "1M"]).describe("K线周期"),
       mode: z.enum(["live", "history"]).optional().default("live").describe("数据模式：live=最近1000根（默认），history=完整历史"),
       after: z.string().optional().describe("起始时间 ISO 8601，live模式翻页用"),
       before: z.string().optional().describe("结束时间 ISO 8601，默认当前"),
     },
     { readOnlyHint: true },
-    async ({ chainIndex, tokenAddress, period, mode, after, before }) => {
+    async ({ chainIndex, tokenContractAddress, period, mode, after, before }) => {
       if (!auth) return AUTH_REQUIRED("READ");
       try {
         const data = mode === "history"
-          ? await onchainosApi.getCandlesticksHistory(auth, chainIndex, tokenAddress, period)
-          : await onchainosApi.getCandlesticks(auth, chainIndex, tokenAddress, period, after, before);
+          ? await onchainosApi.getCandlesticksHistory(auth, chainIndex, tokenContractAddress, period)
+          : await onchainosApi.getCandlesticks(auth, chainIndex, tokenContractAddress, period, after, before);
         return toResult(data);
       } catch (e) { return toError(e); }
     },

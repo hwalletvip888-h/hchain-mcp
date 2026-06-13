@@ -49,22 +49,22 @@ export function registerGatewayTools(server: McpServer, auth: Auth | null): void
 
   server.tool(
     "onchainos_simulate_transaction",
-    "CAT:[链上-网关] | ## 功能：模拟执行交易，不真正上链，返回执行结果和状态变化\n## 场景：用于交易前验证是否会失败、查看预期状态变化\n## 关键词：模拟, simulate, 交易模拟, 预执行, dry run\n## 参数：\n##   - chainIndex: 链索引\n##   - from: 发送地址\n##   - to: 接收地址\n##   - value: 发送金额\n##   - data: calldata\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询（模拟不消耗 Gas）\n## 返回量：中等 ~10KB\n## 关联：onchainos_build_swap 构建交易 → 本工具模拟 → onchainos_broadcast_transaction 广播",
+    "CAT:[链上-网关] | ## 功能：模拟执行交易，不真正上链，返回执行结果和状态变化\n## 场景：用于交易前验证是否会失败、查看预期状态变化\n## 关键词：模拟, simulate, 交易模拟, 预执行, dry run\n## 参数：\n##   - chainIndex: 链索引\n##   - fromAddress: 发送地址\n##   - toAddress: 接收地址\n##   - value: 发送金额\n##   - data: calldata\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询（模拟不消耗 Gas）\n## 返回量：中等 ~10KB\n## 关联：onchainos_build_swap 构建交易 → 本工具模拟 → onchainos_broadcast_transaction 广播",
     {
       chainIndex: z.number().int().describe("链索引"),
-      from: z.string().describe("交易发送地址"),
-      to: z.string().describe("交易接收地址"),
+      fromAddress: z.string().describe("交易发送地址"),
+      toAddress: z.string().describe("交易接收地址"),
       value: z.string().optional().describe("发送的原生代币数量"),
       data: z.string().optional().describe("交易的 calldata"),
     },
     { readOnlyHint: true },
-    async ({ chainIndex, from, to, value, data }) => {
+    async ({ chainIndex, fromAddress, toAddress, value, data }) => {
       if (!auth) return AUTH_REQUIRED("READ");
       try {
-        const simParams: Record<string, string | number> = { chainIndex, from, to };
-        if (value) simParams.value = value;
-        if (data) simParams.data = data;
-        const result = await onchainosPrivateApi.simulateTransaction(auth, simParams);
+        const simBody: Record<string, unknown> = { chainIndex, fromAddress, toAddress };
+        if (value) simBody.value = value;
+        if (data) simBody.data = data;
+        const result = await onchainosPrivateApi.simulateTransaction(auth, simBody);
         return toResult(result, {
           nextSteps: [{ action: "广播交易", tool: "onchainos_broadcast_transaction", condition: "模拟成功后" }],
         });

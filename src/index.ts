@@ -5,6 +5,7 @@
  *   Market / Trade / Wallet / Gateway / Payments
  */
 
+import "dotenv/config";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
@@ -19,7 +20,7 @@ import { registerPaymentsTools } from "./tools/payments.js";
 
 function resolveAuth(): Auth | null {
   const apiKey = process.env.OKX_API_KEY;
-  const secret = process.env.OKX_SECRET;
+  const secret = process.env.OKX_SECRET_KEY;
   const passphrase = process.env.OKX_PASSPHRASE;
 
   if (apiKey && secret && passphrase) {
