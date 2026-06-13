@@ -223,6 +223,141 @@ export const tradeApi = {
 };
 
 // ═══════════════════════════════════════════════════════════════
+// Cross-chain API (v5)
+// ═══════════════════════════════════════════════════════════════
+
+export const crossChainApi = {
+  supportedChain: (auth: Auth) =>
+    request("GET", "/api/v5/dex/cross-chain/supported/chain", { auth }),
+
+  supportedTokens: (auth: Auth) =>
+    request("GET", "/api/v5/dex/cross-chain/supported/tokens", { auth }),
+
+  supportedBridges: (auth: Auth) =>
+    request("GET", "/api/v5/dex/cross-chain/supported/bridges", { auth }),
+
+  bridgeTokensPairs: (auth: Auth, fromChainId: number) =>
+    request("GET", "/api/v5/dex/cross-chain/supported/bridge-tokens-pairs", { params: { fromChainId }, auth }),
+
+  quote: (auth: Auth, params: Record<string, string | number>) =>
+    request("GET", "/api/v5/dex/cross-chain/quote", { params, auth }),
+
+  buildTx: (auth: Auth, params: Record<string, string | number>) =>
+    request("GET", "/api/v5/dex/cross-chain/build-tx", { params, auth }),
+
+  status: (auth: Auth, hash: string) =>
+    request("GET", "/api/v5/dex/cross-chain/status", { params: { hash }, auth }),
+};
+
+// ═══════════════════════════════════════════════════════════════
+// Limit Order API (v5)
+// ═══════════════════════════════════════════════════════════════
+
+export const limitOrderApi = {
+  supportedChain: (auth: Auth) =>
+    request("GET", "/api/v5/dex/aggregator/limit-order/chain", { auth }),
+
+  all: (auth: Auth, chainIndex: number) =>
+    request("GET", "/api/v5/dex/aggregator/limit-order/all", { params: { chainIndex }, auth }),
+
+  detail: (auth: Auth, orderHash: string) =>
+    request("GET", "/api/v5/dex/aggregator/limit-order/detail", { params: { orderHash }, auth }),
+
+  save: (auth: Auth, body: Record<string, unknown>) =>
+    request("POST", "/api/v5/dex/aggregator/limit-order/save-order", { body, auth }),
+
+  cancelCalldata: (auth: Auth, orderHash: string) =>
+    request("GET", "/api/v5/dex/aggregator/limit-order/cancel/calldata", { params: { orderHash }, auth }),
+};
+
+// ═══════════════════════════════════════════════════════════════
+// Wallet API v5 (补充)
+// ═══════════════════════════════════════════════════════════════
+
+export const walletApi = {
+  supportedChains: (auth: Auth) =>
+    request("GET", "/api/v5/wallet/chain/supported-chains", { auth }),
+
+  tokenCurrentPrice: (auth: Auth, body: Record<string, unknown>) =>
+    request("POST", "/api/v5/wallet/token/current-price", { body, auth }),
+
+  tokenRealtimePrice: (auth: Auth, body: Record<string, unknown>) =>
+    request("POST", "/api/v5/wallet/token/real-time-price", { body, auth }),
+
+  tokenHistoricalPrice: (auth: Auth, chainIndex: number, tokenAddress: string, period?: string, limit?: number, begin?: number) =>
+    request("GET", "/api/v5/wallet/token/historical-price", { params: { chainIndex, tokenAddress, period, limit, begin }, auth }),
+
+  tokenDetail: (auth: Auth, chainIndex: number) =>
+    request("GET", "/api/v5/wallet/token/token-detail", { params: { chainIndex }, auth }),
+
+  approvals: (auth: Auth, address: string, chainIndex: number) =>
+    request("GET", "/api/v5/wallet/security/approvals", { params: { address, chainIndex }, auth }),
+
+  utxos: (auth: Auth, chainIndex: number, address: string) =>
+    request("GET", "/api/v5/wallet/utxo/utxos", { params: { chainIndex, address }, auth }),
+
+  utxoDetail: (auth: Auth, chainIndex: number, txHash: string) =>
+    request("GET", "/api/v5/wallet/utxo/utxo-detail", { params: { chainIndex, txHash }, auth }),
+
+  validateAddress: (auth: Auth, chainIndex: number, address: string, addressType?: number) =>
+    request("GET", "/api/v5/wallet/pre-transaction/validate-address", { params: { chainIndex, address, addressType }, auth }),
+};
+
+// ═══════════════════════════════════════════════════════════════
+// DeFi API v5
+// ═══════════════════════════════════════════════════════════════
+
+export const defiApi = {
+  protocolList: (auth: Auth) =>
+    request("GET", "/api/v5/defi/explore/protocol/list", { auth }),
+
+  tokenList: (auth: Auth) =>
+    request("GET", "/api/v5/defi/explore/token/list", { auth }),
+
+  productList: (auth: Auth, body: Record<string, unknown>) =>
+    request("POST", "/api/v5/defi/explore/product/list", { body, auth }),
+
+  productDetail: (auth: Auth, investmentId: string) =>
+    request("GET", "/api/v5/defi/explore/product/detail", { params: { investmentId }, auth }),
+
+  networkList: (auth: Auth) =>
+    request("GET", "/api/v5/defi/explore/network-list", { auth }),
+
+  subscribeInfo: (auth: Auth, body: Record<string, unknown>) =>
+    request("POST", "/api/v5/defi/calculator/subscribe-info", { body, auth }),
+
+  redeemInfo: (auth: Auth, body: Record<string, unknown>) =>
+    request("POST", "/api/v5/defi/calculator/redeem-info", { body, auth }),
+
+  authorization: (auth: Auth, body: Record<string, unknown>) =>
+    request("POST", "/api/v5/defi/transaction/authorization", { body, auth }),
+
+  subscription: (auth: Auth, body: Record<string, unknown>) =>
+    request("POST", "/api/v5/defi/transaction/subscription", { body, auth }),
+
+  redemption: (auth: Auth, body: Record<string, unknown>) =>
+    request("POST", "/api/v5/defi/transaction/redemption", { body, auth }),
+
+  bonus: (auth: Auth, body: Record<string, unknown>) =>
+    request("POST", "/api/v5/defi/transaction/bonus", { body, auth }),
+
+  userPlatformList: (auth: Auth, body: Record<string, unknown>) =>
+    request("POST", "/api/v5/defi/user/asset/platform/list", { body, auth }),
+
+  userPlatformDetail: (auth: Auth, body: Record<string, unknown>) =>
+    request("POST", "/api/v5/defi/user/asset/platform/detail", { body, auth }),
+
+  userAssetDetail: (auth: Auth, body: Record<string, unknown>) =>
+    request("POST", "/api/v5/defi/user/investment/asset-detail", { body, auth }),
+
+  userBalanceList: (auth: Auth, body: Record<string, unknown>) =>
+    request("POST", "/api/v5/defi/user/balance-list", { body, auth }),
+
+  userUnstakeList: (auth: Auth) =>
+    request("GET", "/api/v5/defi/user/investment/unstake-list", { auth }),
+};
+
+// ═══════════════════════════════════════════════════════════════
 // Balance / Wallet API (账户)
 // ═══════════════════════════════════════════════════════════════
 

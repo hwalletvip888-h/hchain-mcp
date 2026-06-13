@@ -11,6 +11,7 @@ import { registerTradeTools } from "./tools/trade.js";
 import { registerBalanceTools } from "./tools/balance.js";
 import { registerGatewayTools } from "./tools/gateway.js";
 import { registerPaymentsTools } from "./tools/payments.js";
+import { registerDefiTools } from "./tools/defi.js";
 
 function resolveAuth(): Auth | null {
   const k = process.env.OKX_API_KEY, s = process.env.OKX_SECRET_KEY, p = process.env.OKX_PASSPHRASE;
@@ -36,6 +37,7 @@ async function main() {
   registerBalanceTools(server, auth);
   registerGatewayTools(server, auth);
   registerPaymentsTools(server, auth);
+  registerDefiTools(server, auth);
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
