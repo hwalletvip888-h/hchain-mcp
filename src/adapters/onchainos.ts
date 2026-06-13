@@ -75,6 +75,113 @@ export const marketApi = {
   /** POST /api/v6/dex/market/token/basic-info ✅ */
   tokenBasicInfo: (auth: Auth, chainIndex: number, tokenAddress: string) =>
     request("POST", "/api/v6/dex/market/token/basic-info", { body: { chainIndex, tokenAddress }, auth }),
+
+  // ── 1.2 批量行情 ──────────────────────────────────────
+
+  /** GET /api/v6/dex/market/trades — 代币交易记录 */
+  trades: (auth: Auth, chainIndex: number, tokenContractAddress: string) =>
+    request("GET", "/api/v6/dex/market/trades", { params: { chainIndex, tokenContractAddress }, auth }),
+
+  // ── 1.3 代币分析 ──────────────────────────────────────
+
+  tokenAdvancedInfo: (auth: Auth, chainIndex: number, tokenContractAddress: string) =>
+    request("GET", "/api/v6/dex/market/token/advanced-info", { params: { chainIndex, tokenContractAddress }, auth }),
+
+  tokenTopLiquidity: (auth: Auth, chainIndex: number, tokenContractAddress: string) =>
+    request("GET", "/api/v6/dex/market/token/top-liquidity", { params: { chainIndex, tokenContractAddress }, auth }),
+
+  tokenHolder: (auth: Auth, chainIndex: number, tokenContractAddress: string, tagFilter?: number) =>
+    request("GET", "/api/v6/dex/market/token/holder", { params: { chainIndex, tokenContractAddress, tagFilter }, auth }),
+
+  tokenHot: (auth: Auth) =>
+    request("GET", "/api/v6/dex/market/token/hot-token", { auth }),
+
+  tokenToplist: (auth: Auth, chains: string, sortBy?: number, timeFrame?: number) =>
+    request("GET", "/api/v6/dex/market/token/toplist", { params: { chains, sortBy, timeFrame }, auth }),
+
+  tokenTopTrader: (auth: Auth, chainIndex: number, tokenContractAddress: string, tagFilter?: number) =>
+    request("GET", "/api/v6/dex/market/token/top-trader", { params: { chainIndex, tokenContractAddress, tagFilter }, auth }),
+
+  // ── 1.4 代币聚类 ──────────────────────────────────────
+
+  tokenClusterSupportedChain: (auth: Auth) =>
+    request("GET", "/api/v6/dex/market/token/cluster/supported/chain", { auth }),
+
+  tokenClusterOverview: (auth: Auth, chainIndex: number, tokenContractAddress: string) =>
+    request("GET", "/api/v6/dex/market/token/cluster/overview", { params: { chainIndex, tokenContractAddress }, auth }),
+
+  tokenClusterList: (auth: Auth, chainIndex: number, tokenContractAddress: string) =>
+    request("GET", "/api/v6/dex/market/token/cluster/list", { params: { chainIndex, tokenContractAddress }, auth }),
+
+  tokenClusterTopHolders: (auth: Auth, chainIndex: number, tokenContractAddress: string, rangeFilter?: number) =>
+    request("GET", "/api/v6/dex/market/token/cluster/top-holders", { params: { chainIndex, tokenContractAddress, rangeFilter }, auth }),
+
+  // ── 1.5 指数价格 ──────────────────────────────────────
+
+  indexCurrentPrice: (auth: Auth, body: Record<string, unknown>) =>
+    request("POST", "/api/v6/dex/index/current-price", { body, auth }),
+
+  indexHistoricalPrice: (auth: Auth, chainIndex: number, tokenAddress: string, period?: string, limit?: number) =>
+    request("GET", "/api/v6/dex/index/historical-price", { params: { chainIndex, tokenAddress, period, limit }, auth }),
+
+  // ── 1.6 投资组合 ──────────────────────────────────────
+
+  portfolioSupportedChain: (auth: Auth) =>
+    request("GET", "/api/v6/dex/market/portfolio/supported/chain", { auth }),
+
+  portfolioOverview: (auth: Auth, chainIndex: number, walletAddress: string, timeFrame?: number) =>
+    request("GET", "/api/v6/dex/market/portfolio/overview", { params: { chainIndex, walletAddress, timeFrame }, auth }),
+
+  portfolioRecentPnl: (auth: Auth, chainIndex: number, walletAddress: string, limit?: number) =>
+    request("GET", "/api/v6/dex/market/portfolio/recent-pnl", { params: { chainIndex, walletAddress, limit }, auth }),
+
+  portfolioTokenLatestPnl: (auth: Auth, chainIndex: number, walletAddress: string, tokenContractAddress: string) =>
+    request("GET", "/api/v6/dex/market/portfolio/token/latest-pnl", { params: { chainIndex, walletAddress, tokenContractAddress }, auth }),
+
+  portfolioDexHistory: (auth: Auth, chainIndex: number, walletAddress: string, begin?: number, end?: number, limit?: number) =>
+    request("GET", "/api/v6/dex/market/portfolio/dex-history", { params: { chainIndex, walletAddress, begin, end, limit }, auth }),
+
+  // ── 1.7 地址追踪 ──────────────────────────────────────
+
+  addressTrackerTrades: (auth: Auth, trackerType: number) =>
+    request("GET", "/api/v6/dex/market/address-tracker/trades", { params: { trackerType }, auth }),
+
+  // ── 1.8 信号 ──────────────────────────────────────────
+
+  signalSupportedChain: (auth: Auth) =>
+    request("GET", "/api/v6/dex/market/signal/supported/chain", { auth }),
+
+  signalList: (auth: Auth, body: Record<string, unknown>) =>
+    request("POST", "/api/v6/dex/market/signal/list", { body, auth }),
+
+  leaderboardSupportedChain: (auth: Auth) =>
+    request("GET", "/api/v6/dex/market/leaderboard/supported/chain", { auth }),
+
+  leaderboardList: (auth: Auth, chainIndex: number, timeFrame?: number, sortBy?: number) =>
+    request("GET", "/api/v6/dex/market/leaderboard/list", { params: { chainIndex, timeFrame, sortBy }, auth }),
+
+  // ── 1.9 Memepump ──────────────────────────────────────
+
+  memepumpSupported: (auth: Auth) =>
+    request("GET", "/api/v6/dex/market/memepump/supported/chainsProtocol", { auth }),
+
+  memepumpTokenList: (auth: Auth, chainIndex: number, protocolId?: number, sort?: string, order?: string, limit?: number) =>
+    request("GET", "/api/v6/dex/market/memepump/tokenList", { params: { chainIndex, protocolId, sort, order, limit }, auth }),
+
+  memepumpTokenDetails: (auth: Auth, chainIndex: number, tokenContractAddress: string) =>
+    request("GET", "/api/v6/dex/market/memepump/tokenDetails", { params: { chainIndex, tokenContractAddress }, auth }),
+
+  memepumpTokenDevInfo: (auth: Auth, chainIndex: number, tokenContractAddress: string) =>
+    request("GET", "/api/v6/dex/market/memepump/tokenDevInfo", { params: { chainIndex, tokenContractAddress }, auth }),
+
+  memepumpSimilarToken: (auth: Auth, chainIndex: number, tokenContractAddress: string) =>
+    request("GET", "/api/v6/dex/market/memepump/similarToken", { params: { chainIndex, tokenContractAddress }, auth }),
+
+  memepumpBundleInfo: (auth: Auth, chainIndex: number, tokenContractAddress: string) =>
+    request("GET", "/api/v6/dex/market/memepump/tokenBundleInfo", { params: { chainIndex, tokenContractAddress }, auth }),
+
+  memepumpApedWallet: (auth: Auth, chainIndex: number, tokenContractAddress: string) =>
+    request("GET", "/api/v6/dex/market/memepump/apedWallet", { params: { chainIndex, tokenContractAddress }, auth }),
 };
 
 // ═══════════════════════════════════════════════════════════════
