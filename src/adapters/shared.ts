@@ -9,22 +9,29 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 // ── 标准返回结构 ──────────────────────────────────────────────
 
-/** 成功返回 */
-export function toResult<T>(data: T, meta?: Partial<ResultMeta>): CallToolResult {
+/** 成功返回 — 含 nextSteps 提示链 */
+export function toResult<T>(
+  data: T,
+  opts?: {
+    meta?: Partial<ResultMeta>;
+    warnings?: string[];
+    nextSteps?: NextStep[];
+  },
+): CallToolResult {
+  const r: Record<string, unknown> = {
+    success: true,
+    data,
+    tsIso: new Date().toISOString(),
+    meta: {
+      source: "okx-onchainos",
+      cached: false,
+      ...opts?.meta,
+    },
+  };
+  if (opts?.warnings?.length) r.warnings = opts.warnings;
+  if (opts?.nextSteps?.length) r.nextSteps = opts.nextSteps;
   return {
-    content: [{
-      type: "text",
-      text: JSON.stringify({
-        success: true,
-        data,
-        tsIso: new Date().toISOString(),
-        meta: {
-          source: "okx-onchainos",
-          cached: false,
-          ...meta,
-        },
-      }),
-    }],
+    content: [{ type: "text", text: JSON.stringify(r) }],
   };
 }
 
@@ -120,3 +127,11 @@ export type RiskLevel = "READ" | "WRITE";
 
 /** 9 字段描述模板所需的返回量标注 */
 export type ReturnSize = "微小 ~1KB" | "微小 ~2KB" | "中等 ~10KB" | "中等 ~30KB" | "大 ~100KB" | "大 ~500KB";
+
+/** 链式提示下一步 */
+export interface NextStep {
+  action: string;
+  tool: string;
+  params?: Record<string, unknown>;
+  condition?: string;
+}

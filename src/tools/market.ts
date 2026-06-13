@@ -1,8 +1,8 @@
 /**
  * Market 模块 — 行情/搜索/K线
  *
- * 公开接口，无需 API Key
- * CAT: [链上-行情]
+ * 公开接口，无需 API Key · CAT: [链上-行情]
+ * 工具数: 4 (search/price/candlesticks/info)
  */
 
 import { z } from "zod";
@@ -20,10 +20,15 @@ export function registerMarketTools(server: McpServer): void {
     {
       keyword: z.string().min(2).describe("搜索关键词：代币名称、符号（如BTC/ETH）或完整合约地址"),
     },
+    { readOnlyHint: true },
     async ({ keyword }) => {
       try {
         const data = await onchainosApi.searchToken(keyword);
-        return toResult(data);
+        return toResult(data, {
+          nextSteps: data && Array.isArray(data) && data.length > 0
+            ? [{ action: "查看代币详情", tool: "onchainos_get_token_info", params: { tokenAddress: (data[0] as any)?.address } }]
+            : [],
+        });
       } catch (e) { return toError(e); }
     },
   );
@@ -37,10 +42,16 @@ export function registerMarketTools(server: McpServer): void {
       chainId: z.number().int().describe("链 ID。1=ETH, 56=BSC, 137=Polygon, 8453=Base, 501=Solana"),
       tokenAddress: z.string().describe("代币合约地址（必填）"),
     },
+    { readOnlyHint: true },
     async ({ chainId, tokenAddress }) => {
       try {
         const data = await onchainosApi.getPrice(chainId, tokenAddress);
-        return toResult(data);
+        return toResult(data, {
+          nextSteps: [
+            { action: "获取历史K线", tool: "onchainos_get_candlesticks", params: { chainId, tokenAddress, period: "1H" } },
+            { action: "获取交易报价", tool: "onchainos_get_quote", params: { chainId, tokenAddress } },
+          ],
+        });
       } catch (e) { return toError(e); }
     },
   );
@@ -49,35 +60,21 @@ export function registerMarketTools(server: McpServer): void {
 
   server.tool(
     "onchainos_get_candlesticks",
-    "CAT:[链上-行情] | ## 功能：获取指定代币的实时 K 线数据（最近 1000 根）\n## 场景：用于价格走势分析、技术指标计算、交易信号生成\n## 关键词：K线, candlestick, 走势图, OHLCV, 技术分析\n## 参数：\n##   - chainId: 链 ID\n##   - tokenAddress: 代币合约地址\n##   - period: K线周期。1m/5m/15m/30m/1H/4H/1D/1W/1M\n##   - after: 起始时间 ISO string（可选，用于翻页）\n##   - before: 结束时间 ISO string（可选，默认当前）\n## 鉴权：PUBLIC — 公开接口，不需要 API Key\n## 风险：READ — 只读查询\n## 返回量：大 ~100KB\n## 关联：onchainos_get_price 获取实时价 → 本工具获取历史 K 线 → onchainos_get_quote 交易",
+    "CAT:[链上-行情] | ## 功能：获取指定代币的 K 线数据，支持实时最近1000根或完整历史\n## 场景：用于价格走势分析、技术指标计算、交易信号生成、深度回测\n## 关键词：K线, candlestick, 走势图, OHLCV, 技术分析, 回测\n## 参数：\n##   - chainId: 链 ID\n##   - tokenAddress: 代币合约地址\n##   - period: K线周期。1m/5m/15m/30m/1H/4H/1D/1W/1M\n##   - mode: \"live\"=最近1000根带翻页（默认） | \"history\"=完整历史数据\n##   - after: 起始时间（live模式翻页用）\n##   - before: 结束时间（live模式，默认当前）\n## 鉴权：PUBLIC — 公开接口，不需要 API Key\n## 风险：READ — 只读查询\n## 返回量：大 ~100KB\n## 关联：onchainos_get_price 获取实时价 → 本工具获取 K 线 → onchainos_get_quote 交易",
     {
       chainId: z.number().int().describe("链 ID"),
       tokenAddress: z.string().describe("代币合约地址"),
       period: z.enum(["1m", "5m", "15m", "30m", "1H", "4H", "1D", "1W", "1M"]).describe("K线周期"),
-      after: z.string().optional().describe("起始时间（ISO 8601），用于翻页获取更早数据"),
-      before: z.string().optional().describe("结束时间（ISO 8601），默认当前时间"),
+      mode: z.enum(["live", "history"]).optional().default("live").describe("数据模式：live=最近1000根支持翻页（默认），history=完整历史"),
+      after: z.string().optional().describe("起始时间 ISO 8601，live模式翻页用"),
+      before: z.string().optional().describe("结束时间 ISO 8601，默认当前"),
     },
-    async ({ chainId, tokenAddress, period, after, before }) => {
+    { readOnlyHint: true },
+    async ({ chainId, tokenAddress, period, mode, after, before }) => {
       try {
-        const data = await onchainosApi.getCandlesticks(chainId, tokenAddress, period, after, before);
-        return toResult(data);
-      } catch (e) { return toError(e); }
-    },
-  );
-
-  // ── 获取 K 线历史 ──────────────────────────────────────────
-
-  server.tool(
-    "onchainos_get_candlesticks_history",
-    "CAT:[链上-行情] | ## 功能：获取指定代币的完整历史 K 线数据\n## 场景：用于深度回测、长期趋势分析、历史波动率计算\n## 关键词：历史K线, 回测, 历史数据, backtest\n## 参数：\n##   - chainId: 链 ID\n##   - tokenAddress: 代币合约地址\n##   - period: K线周期\n## 鉴权：PUBLIC — 公开接口，不需要 API Key\n## 风险：READ — 只读查询\n## 返回量：大 ~500KB\n## 关联：onchainos_get_candlesticks 获取实时 K 线 → 本工具获取完整历史",
-    {
-      chainId: z.number().int().describe("链 ID"),
-      tokenAddress: z.string().describe("代币合约地址"),
-      period: z.enum(["5m", "15m", "30m", "1H", "4H", "1D", "1W", "1M"]).describe("K线周期"),
-    },
-    async ({ chainId, tokenAddress, period }) => {
-      try {
-        const data = await onchainosApi.getCandlesticksHistory(chainId, tokenAddress, period);
+        const data = mode === "history"
+          ? await onchainosApi.getCandlesticksHistory(chainId, tokenAddress, period)
+          : await onchainosApi.getCandlesticks(chainId, tokenAddress, period, after, before);
         return toResult(data);
       } catch (e) { return toError(e); }
     },
@@ -92,10 +89,16 @@ export function registerMarketTools(server: McpServer): void {
       chainId: z.number().int().describe("链 ID"),
       tokenAddress: z.string().describe("代币合约地址"),
     },
+    { readOnlyHint: true },
     async ({ chainId, tokenAddress }) => {
       try {
         const data = await onchainosApi.getTokenInfo(chainId, tokenAddress);
-        return toResult(data);
+        return toResult(data, {
+          nextSteps: [
+            { action: "查看实时价格", tool: "onchainos_get_price", params: { chainId, tokenAddress } },
+            { action: "查看K线", tool: "onchainos_get_candlesticks", params: { chainId, tokenAddress, period: "1D" } },
+          ],
+        });
       } catch (e) { return toError(e); }
     },
   );

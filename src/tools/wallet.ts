@@ -1,8 +1,8 @@
 /**
  * Wallet 模块 — 余额/交易历史
  *
- * 全部需要 API Key
- * CAT: [链上-账户]
+ * 全部需要 API Key · CAT: [链上-账户]
+ * 工具数: 3 (balance/history/detail)
  */
 
 import { z } from "zod";
@@ -22,11 +22,17 @@ export function registerWalletTools(server: McpServer, auth: Auth | null): void 
       address: z.string().describe("钱包地址"),
       chainId: z.number().int().describe("链 ID"),
     },
+    { readOnlyHint: true },
     async ({ address, chainId }) => {
       if (!auth) return AUTH_REQUIRED("READ");
       try {
         const data = await onchainosPrivateApi.getBalance(auth, address, chainId);
-        return toResult(data);
+        return toResult(data, {
+          nextSteps: [
+            { action: "查看交易历史", tool: "onchainos_get_transaction_history", params: { address, chainId } },
+            { action: "获取当前Gas", tool: "onchainos_get_gas_config", params: { chainId } },
+          ],
+        });
       } catch (e) { return toError(e); }
     },
   );
@@ -41,6 +47,7 @@ export function registerWalletTools(server: McpServer, auth: Auth | null): void 
       chainId: z.number().int().describe("链 ID"),
       limit: z.number().int().min(1).max(100).optional().describe("返回条数，默认 50，最大 100"),
     },
+    { readOnlyHint: true },
     async ({ address, chainId, limit }) => {
       if (!auth) return AUTH_REQUIRED("READ");
       try {
@@ -59,6 +66,7 @@ export function registerWalletTools(server: McpServer, auth: Auth | null): void 
       txHash: z.string().describe("交易哈希（txHash / transaction hash）"),
       chainId: z.number().int().describe("链 ID"),
     },
+    { readOnlyHint: true },
     async ({ txHash, chainId }) => {
       if (!auth) return AUTH_REQUIRED("READ");
       try {
