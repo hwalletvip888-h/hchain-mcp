@@ -1,5 +1,5 @@
 {
-  "name": "h-mcp",
+  "name": "hchain-mcp",
   "version": "1.0.0",
   "description": "h-mcp — AI-native multi-chain trading MCP Server, 99 tools over HTTP & stdio",
   "type": "module",
