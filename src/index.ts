@@ -35,7 +35,7 @@ async function main() {
     console.error("[h-mcp] Auth 已配置");
   }
 
-  const server = new McpServer({ name: "hchain-mcp", version: "1.0.0" });
+  const server = new McpServer({ name: "hchain-mcp", version: "1.0.1" });
 
   // 逐模块注册工具 (按官方文档对接)
   registerBalanceTools(server, auth);

@@ -63,7 +63,7 @@ async function main() {
   });
 
   // 2. MCP Server + 全部工具注册
-  const server = new McpServer({ name: "hchain-mcp", version: "1.0.0" });
+  const server = new McpServer({ name: "hchain-mcp", version: "1.0.1" });
 
   registerBalanceTools(server, auth);
   registerGatewayTools(server, auth);
