@@ -1,8 +1,11 @@
+#!/usr/bin/env node
+
 /**
  * h-mcp Server — stdio 传输
  * 规范: OnchainOS-API对接规范.md §五
  */
 import "dotenv/config";
+import { readFileSync } from "node:fs";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import type { Auth } from "./adapters/shared.js";
@@ -16,6 +19,10 @@ import { registerIntentTools } from "./tools/intent.js";
 import { registerMarketTools } from "./tools/market.js";
 import { registerWsTools } from "./tools/ws.js";
 import { registerSkillTools } from "./tools/skills.js";
+
+const { version } = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf-8"),
+);
 
 function resolveAuth(): Auth | null {
   const k = process.env.OKX_API_KEY, s = process.env.OKX_SECRET_KEY, p = process.env.OKX_PASSPHRASE;
@@ -35,7 +42,7 @@ async function main() {
     console.error("[h-mcp] Auth 已配置");
   }
 
-  const server = new McpServer({ name: "hchain-mcp", version: "1.0.1" });
+  const server = new McpServer({ name: "hchain-mcp", version });
 
   // 逐模块注册工具 (按官方文档对接)
   registerBalanceTools(server, auth);
