@@ -15,6 +15,7 @@ import { registerTradeTools } from "./tools/trade.js";
 import { registerIntentTools } from "./tools/intent.js";
 import { registerMarketTools } from "./tools/market.js";
 import { registerWsTools } from "./tools/ws.js";
+import { registerSkillTools } from "./tools/skills.js";
 
 function resolveAuth(): Auth | null {
   const k = process.env.OKX_API_KEY, s = process.env.OKX_SECRET_KEY, p = process.env.OKX_PASSPHRASE;
@@ -46,6 +47,7 @@ async function main() {
   registerIntentTools(server, auth);
   registerMarketTools(server, auth);
   registerWsTools(server, auth);
+  registerSkillTools(server, auth);
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
