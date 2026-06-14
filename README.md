@@ -1,11 +1,11 @@
-# h-mcp
+# hchain-mcp
 
 AI-native multi-chain trading MCP Server — 99 tools, HTTP & stdio dual transport.
 
 ## Install
 
 ```bash
-npm install -g h-mcp
+npm install -g hchain-mcp
 ```
 
 ## Usage
@@ -13,7 +13,7 @@ npm install -g h-mcp
 ### stdio (local Agent)
 
 ```bash
-h-mcp
+hchain-mcp
 ```
 
 Set API Key:
@@ -22,17 +22,17 @@ Set API Key:
 export OKX_API_KEY=xxx
 export OKX_SECRET_KEY=xxx
 export OKX_PASSPHRASE=xxx
-h-mcp
+hchain-mcp
 ```
 
 ### HTTP (remote Agent)
 
 ```bash
-h-mcp start:http
+hchain-mcp start:http
 # → http://127.0.0.1:3000
 
 # or custom port
-PORT=3099 h-mcp start:http
+PORT=3099 hchain-mcp start:http
 ```
 
 Endpoints:
@@ -47,9 +47,9 @@ Endpoints:
 ```json
 {
   "mcpServers": {
-    "h-mcp": {
+    "hchain-mcp": {
       "command": "npx",
-      "args": ["h-mcp"],
+      "args": ["hchain-mcp"],
       "env": {
         "OKX_API_KEY": "xxx",
         "OKX_SECRET_KEY": "xxx",
@@ -65,7 +65,7 @@ Or HTTP mode:
 ```json
 {
   "mcpServers": {
-    "h-mcp": {
+    "hchain-mcp": {
       "url": "http://127.0.0.1:3099/mcp"
     }
   }
