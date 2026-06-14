@@ -1,5 +1,5 @@
 /**
- * OnchainOS MCP Server — HTTP 传输层
+ * h-mcp Server — HTTP 传输层
  * 规范: AGENT-MCP-RULES.md §12 (传输层透明 + 无状态)
  * 使用 StreamableHTTPServerTransport (SDK 推荐), 废弃的 SSE transport 已跳过
  *
@@ -63,7 +63,7 @@ async function main() {
   });
 
   // 2. MCP Server + 全部工具注册
-  const server = new McpServer({ name: "onchain-mcp", version: "1.0.0" });
+  const server = new McpServer({ name: "h-mcp", version: "1.0.0" });
 
   registerBalanceTools(server, auth);
   registerGatewayTools(server, auth);

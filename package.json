@@ -1,7 +1,7 @@
 {
-  "name": "onchain-mcp",
+  "name": "h-mcp",
   "version": "1.0.0",
-  "description": "Onchain OS MCP Server — AI-native multi-chain trading & data per hvip对接规范",
+  "description": "h-mcp — AI-native multi-chain trading MCP Server, 99 tools over HTTP & stdio",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {

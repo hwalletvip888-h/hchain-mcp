@@ -1,5 +1,5 @@
 /**
- * OnchainOS MCP — 共享工具层
+ * h-mcp — 共享工具层
  * 规范: OnchainOS-API对接规范.md §四/§六 + AGENT-MCP-RULES.md §4/§8
  */
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";

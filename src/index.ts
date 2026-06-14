@@ -1,5 +1,5 @@
 /**
- * OnchainOS MCP Server
+ * h-mcp Server — stdio 传输
  * 规范: OnchainOS-API对接规范.md §五
  */
 import "dotenv/config";
@@ -29,13 +29,13 @@ function resolveAuth(): Auth | null {
 async function main() {
   const auth = resolveAuth();
   if (!auth) {
-    console.error("[onchain-mcp] 未配置 API Key。设置 OKX_API_KEY / OKX_SECRET_KEY / OKX_PASSPHRASE");
-    console.error("[onchain-mcp] 获取: https://web3.okx.com/onchainos/dev-portal");
+    console.error("[h-mcp] 未配置 API Key。设置 OKX_API_KEY / OKX_SECRET_KEY / OKX_PASSPHRASE");
+    console.error("[h-mcp] 获取: https://web3.okx.com/onchainos/dev-portal");
   } else {
-    console.error("[onchain-mcp] Auth 已配置");
+    console.error("[h-mcp] Auth 已配置");
   }
 
-  const server = new McpServer({ name: "onchain-mcp", version: "1.0.0" });
+  const server = new McpServer({ name: "h-mcp", version: "1.0.0" });
 
   // 逐模块注册工具 (按官方文档对接)
   registerBalanceTools(server, auth);
@@ -51,7 +51,7 @@ async function main() {
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("[onchain-mcp] 就绪");
+  console.error("[h-mcp] 就绪");
 }
 
-main().catch(e => { console.error("[onchain-mcp] 启动失败:", e); process.exit(1); });
+main().catch(e => { console.error("[h-mcp] 启动失败:", e); process.exit(1); });
