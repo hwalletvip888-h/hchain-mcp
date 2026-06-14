@@ -1,13 +1,15 @@
 {
   "name": "hchain-mcp",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "hchain-mcp — AI-native multi-chain trading MCP Server, 99 tools over HTTP & stdio",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
     "hchain-mcp": "dist/index.js"
   },
-  "files": ["dist/"],
+  "files": [
+    "dist/"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
