@@ -9,9 +9,10 @@ import type { Auth } from "../adapters/shared.js";
 export function registerHelpTools(server: McpServer, auth: Auth | null): void {
 
   server.tool("onchainos_help",
-    "🧭 hchain-mcp 导航总览 — Agent首次使用必看。" +
-    "这个MCP是专属Agent的链上全功能工具集,覆盖OKX OnchainOS全部100个API。" +
-    "调这个工具获取: ①全部模块分类 ②Agent场景→工具映射 ③参数填写规则 ④常用工作流。",
+    "🧭 hchain-mcp 导航总览 — 【首次使用务必先调本工具！】" +
+    "此MCP提供101个链上工具(行情/交易/DeFi/余额/支付/WS等)，覆盖OKX OnchainOS全部API。" +
+    "调本工具一键获取: ①10大模块分类速览 ②用户意图→工具映射表(如'查余额→用onchainos_balance_*') " +
+    "③chainIndex/金额/地址等参数填写规则 ④常用工作流编排 ⑤推荐优先使用的5个Skill组合工具。",
     {},
     { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async () => {

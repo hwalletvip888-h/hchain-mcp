@@ -51,7 +51,7 @@ export function registerWsTools(server: McpServer, auth: Auth | null): void {
     {
       channel: z.string().describe("频道名"),
       chainIndex: z.string().describe("链ID(字符串)。如 '1'=ETH '56'=BSC '501'=Solana。不确定先调 onchainos_ws_connect"),
-      tokenContractAddress: z.string().optional().describe("代币地址"),
+      tokenContractAddress: z.string().optional().describe("代币合约地址(小写)。主链币传空字符串"),
     },
     { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async ({ channel, chainIndex, tokenContractAddress }) => {

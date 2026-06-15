@@ -177,7 +177,7 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
     "链上-Skill | 综合风险检测: 安全+集中度+打包+开发者, 输出0-100评分。📋 Agent 调用场景: 用户说'这个币安全吗'/'查一下貔貅'/'有没有rug风险'/'代币风险评估'/'敢不敢买'。并行调用4个API综合打分, LOW=安全 MEDIUM=谨慎 HIGH=强烈不建议 CRITICAL=禁止交易",
     {
       chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana。⚠️ 不确定先调 onchainos_dex_supported_chain"),
-      tokenContractAddress: z.string().describe("代币合约地址。从 onchainos_token_search 获取"),
+      tokenContractAddress: z.string().describe("代币合约地址(小写)。主链币传空字符串。⚠️ 不知道地址 → 先调 onchainos_token_search 获取"),
     },
     { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async ({ chainIndex, tokenContractAddress }) => {
@@ -279,7 +279,7 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
     {
       chainIndex: z.string().describe("链ID(字符串)。如 '1'=ETH '501'=Solana。⚠️ 不确定先调 onchainos_dex_supported_chain"),
       fromTokenAddress: z.string().describe("卖出代币合约地址(小写)。⚠️ 不知道地址 → 先调 onchainos_token_search 搜索。主链币传 ''"),
-      toTokenAddress: z.string().describe("买入代币合约地址(小写)。⚠️ 不知道地址 → 先调 onchainos_token_search 搜索"),
+      toTokenAddress: z.string().describe("买入代币合约地址(小写)。主链币传 ''。⚠️ 不知道地址 → 先调 onchainos_token_search 搜索"),
       amount: z.string().optional().describe(
         "交易数量(最小单位, 含精度 decimals)。" +
         "填了会调 quote 评估价格影响, 不填仅用波动率估算。" +

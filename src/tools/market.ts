@@ -105,7 +105,7 @@ export function registerMarketTools(server: McpServer, auth: Auth | null): void 
     "链上-行情 | 获取代币安全分析(貔貅检测)【场景:查是不是貔貅盘/安全检测】",
     {
       chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"),
-      tokenContractAddress: z.string().describe("代币合约地址"),
+      tokenContractAddress: z.string().describe("代币合约地址(小写)。主链币传空字符串 ''。⚠️ 不知道地址 → 先调 onchainos_token_search"),
     },
     { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async ({ chainIndex, tokenContractAddress }) => {
@@ -193,7 +193,7 @@ export function registerMarketTools(server: McpServer, auth: Auth | null): void 
     "链上-行情 | 获取代币前 5 流动性池【场景:查代币的流动性池/交易深度】",
     {
       chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"),
-      tokenContractAddress: z.string().describe("代币合约地址"),
+      tokenContractAddress: z.string().describe("代币合约地址(小写)。主链币传空字符串 ''。⚠️ 不知道地址 → 先调 onchainos_token_search"),
     },
     { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async ({ chainIndex, tokenContractAddress }) => {
@@ -233,7 +233,7 @@ export function registerMarketTools(server: McpServer, auth: Auth | null): void 
     "链上-行情 | 获取代币前 100 持有人【场景:查代币持币地址分布】",
     {
       chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"),
-      tokenContractAddress: z.string().describe("代币合约地址"),
+      tokenContractAddress: z.string().describe("代币合约地址(小写)。主链币传空字符串 ''。⚠️ 不知道地址 → 先调 onchainos_token_search"),
       tagFilter: z.string().optional().describe("标签: 1=KOL 2=Dev 3=聪明钱 4=鲸鱼 5=新钱包 6=可疑 7=狙击手 8=疑似钓鱼 9=Bundle"),
       cursor: z.string().optional().describe("分页游标"),
       limit: z.string().optional().describe("每页条数, 最大100"),
@@ -256,7 +256,7 @@ export function registerMarketTools(server: McpServer, auth: Auth | null): void 
     "链上-行情 | 获取代币持仓集中度分析【场景:查持仓集中度/筹码分布】",
     {
       chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"),
-      tokenContractAddress: z.string().describe("代币合约地址"),
+      tokenContractAddress: z.string().describe("代币合约地址(小写)。主链币传空字符串 ''。⚠️ 不知道地址 → 先调 onchainos_token_search"),
     },
     { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async ({ chainIndex, tokenContractAddress }) => {
@@ -267,7 +267,7 @@ export function registerMarketTools(server: McpServer, auth: Auth | null): void 
 
   server.tool("onchainos_token_cluster_list",
     "链上-行情 | 获取持仓集群列表【场景:查看大额持仓集群】",
-    { chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"), tokenContractAddress: z.string().describe("代币合约地址") },
+    { chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"), tokenContractAddress: z.string().describe("代币合约地址(小写)。主链币传空字符串 ''。⚠️ 不知道地址 → 先调 onchainos_token_search") },
     { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async ({ chainIndex, tokenContractAddress }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.tokenClusterList(auth, chainIndex, tokenContractAddress)); } catch(e) { return toError(e); } },
   );
@@ -276,7 +276,7 @@ export function registerMarketTools(server: McpServer, auth: Auth | null): void 
     "链上-行情 | 获取前10/50/100持仓集中度【场景:查前N名持仓占比】",
     {
       chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"),
-      tokenContractAddress: z.string().describe("代币合约地址"),
+      tokenContractAddress: z.string().describe("代币合约地址(小写)。主链币传空字符串 ''。⚠️ 不知道地址 → 先调 onchainos_token_search"),
       rangeFilter: z.enum(["1","2","3"]).describe("范围: 1=前10 2=前50 3=前100"),
     },
     { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
@@ -287,7 +287,7 @@ export function registerMarketTools(server: McpServer, auth: Auth | null): void 
     "链上-行情 | 获取代币前100盈利地址【场景:查谁在赚钱/Top trader】",
     {
       chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"),
-      tokenContractAddress: z.string().describe("代币合约地址"),
+      tokenContractAddress: z.string().describe("代币合约地址(小写)。主链币传空字符串 ''。⚠️ 不知道地址 → 先调 onchainos_token_search"),
       tagFilter: z.string().optional().describe("标签过滤: 1=KOL 2=Dev 3=聪明钱 4=鲸鱼 5=新钱包 6=老鼠仓 7=狙击手 8=疑似钓鱼 9=Bundle"),
       cursor: z.string().optional().describe("分页游标"),
       limit: z.string().optional().describe("每页条数, 最大100"),
@@ -314,7 +314,7 @@ export function registerMarketTools(server: McpServer, auth: Auth | null): void 
       maxAmountUsd: z.string().optional().describe("最大交易金额(USD)"),
       minAddressCount: z.string().optional().describe("最小地址数"),
       maxAddressCount: z.string().optional().describe("最大地址数"),
-      tokenAddress: z.string().optional().describe("指定代币合约地址"),
+      tokenAddress: z.string().optional().describe("指定代币合约地址(小写)。主链币传空字符串"),
       minMarketCapUsd: z.string().optional().describe("最小市值(USD)"),
       maxMarketCapUsd: z.string().optional().describe("最大市值(USD)"),
       minLiquidityUsd: z.string().optional().describe("最小流动性(USD)"),
@@ -396,35 +396,35 @@ export function registerMarketTools(server: McpServer, auth: Auth | null): void 
 
   server.tool("onchainos_memepump_token_details",
     "链上-行情 | 单一代币扫链详情【场景:查Meme代币详细数据】",
-    { chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"), tokenContractAddress: z.string().describe("代币地址"), walletAddress: z.string().optional().describe("查用户持仓") },
+    { chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"), tokenContractAddress: z.string().describe("代币合约地址(小写)。主链币传空字符串 ''"), walletAddress: z.string().optional().describe("查用户持仓") },
     { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async ({ chainIndex, tokenContractAddress, walletAddress }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.memepumpTokenDetails(auth, chainIndex, tokenContractAddress, walletAddress)); } catch(e) { return toError(e); } },
   );
 
   server.tool("onchainos_memepump_token_dev_info",
     "链上-行情 | 获取开发者信息(发币数/RugPull/持仓)【场景:查代币开发者/有没有Rug历史】",
-    { chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"), tokenContractAddress: z.string().describe("代币地址") },
+    { chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"), tokenContractAddress: z.string().describe("代币合约地址(小写)。主链币传空字符串 ''") },
     { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async ({ chainIndex, tokenContractAddress }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.memepumpTokenDevInfo(auth, chainIndex, tokenContractAddress)); } catch(e) { return toError(e); } },
   );
 
   server.tool("onchainos_memepump_similar_token",
     "链上-行情 | 查找相似代币【场景:找相似Meme代币】",
-    { chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"), tokenContractAddress: z.string().describe("代币地址") },
+    { chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"), tokenContractAddress: z.string().describe("代币合约地址(小写)。主链币传空字符串 ''") },
     { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async ({ chainIndex, tokenContractAddress }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.memepumpSimilarToken(auth, chainIndex, tokenContractAddress)); } catch(e) { return toError(e); } },
   );
 
   server.tool("onchainos_memepump_bundle_info",
     "链上-行情 | 检测打包交易(bundler占比)【场景:检测有没有打包/老鼠仓】",
-    { chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"), tokenContractAddress: z.string().describe("代币地址") },
+    { chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"), tokenContractAddress: z.string().describe("代币合约地址(小写)。主链币传空字符串 ''") },
     { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async ({ chainIndex, tokenContractAddress }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.memepumpBundleInfo(auth, chainIndex, tokenContractAddress)); } catch(e) { return toError(e); } },
   );
 
   server.tool("onchainos_memepump_aped_wallet",
     "链上-行情 | 获取同车钱包列表(含PnL)【场景:查一起买入的钱包/同车地址】",
-    { chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"), tokenContractAddress: z.string().describe("代币地址"), walletAddress: z.string().optional().describe("指定钱包") },
+    { chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"), tokenContractAddress: z.string().describe("代币合约地址(小写)。主链币传空字符串 ''"), walletAddress: z.string().optional().describe("指定钱包") },
     { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async ({ chainIndex, tokenContractAddress, walletAddress }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.memepumpApedWallet(auth, chainIndex, tokenContractAddress, walletAddress)); } catch(e) { return toError(e); } },
   );
@@ -458,7 +458,7 @@ export function registerMarketTools(server: McpServer, auth: Auth | null): void 
 
   server.tool("onchainos_portfolio_token_latest_pnl",
     "链上-分析 | 获取地址对特定代币的最新收益【场景:查钱包在某个代币上的盈亏】",
-    { chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"), walletAddress: z.string().describe("钱包地址"), tokenContractAddress: z.string().describe("代币合约地址") },
+    { chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"), walletAddress: z.string().describe("钱包地址"), tokenContractAddress: z.string().describe("代币合约地址(小写)。主链币传空字符串 ''。⚠️ 不知道地址 → 先调 onchainos_token_search") },
     { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async ({ chainIndex, walletAddress, tokenContractAddress }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.portfolioTokenLatestPnl(auth, chainIndex, walletAddress, tokenContractAddress)); } catch(e) { return toError(e); } },
   );
@@ -468,7 +468,7 @@ export function registerMarketTools(server: McpServer, auth: Auth | null): void 
     {
       chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"), walletAddress: z.string().describe("钱包地址"),
       begin: z.string().describe("开始时间戳(毫秒)"), end: z.string().describe("结束时间戳(毫秒)"),
-      tokenContractAddress: z.string().optional(), type: z.string().optional().describe("1=BUY 2=SELL 3=TransferIn 4=TransferOut"), cursor: z.string().optional(), limit: z.string().optional(),
+      tokenContractAddress: z.string().optional().describe("按代币地址筛选(小写)"), type: z.string().optional().describe("1=BUY 2=SELL 3=TransferIn 4=TransferOut"), cursor: z.string().optional(), limit: z.string().optional(),
     },
     { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async ({ chainIndex, walletAddress, begin, end, tokenContractAddress, type, cursor, limit }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.portfolioDexHistory(auth, { chainIndex, walletAddress, begin, end, tokenContractAddress, type, cursor, limit })); } catch(e) { return toError(e); } },
@@ -577,14 +577,14 @@ export function registerMarketTools(server: McpServer, auth: Auth | null): void 
 
   server.tool("onchainos_social_vibe_timeline",
     "链上-分析 | 获取代币 Vibe 热度时间线【场景:查代币热度趋势/社媒热度变化】",
-    { chainIndex: z.string().describe("链ID(字符串)。如 '1'=ETH '501'=Solana。不确定先调 onchainos_market_supported_chain"), tokenAddress: z.string().describe("代币合约地址"), timeFrame: z.enum(["1","2","3","4"]).optional().describe("1=24h 2=72h 3=7d 4=30d") },
+    { chainIndex: z.string().describe("链ID(字符串)。如 '1'=ETH '501'=Solana。不确定先调 onchainos_market_supported_chain"), tokenAddress: z.string().describe("代币合约地址(小写)。主链币传空字符串 ''。⚠️ 不知道地址 → 先调 onchainos_token_search"), timeFrame: z.enum(["1","2","3","4"]).optional().describe("1=24h 2=72h 3=7d 4=30d") },
     { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async (params) => { if(!auth) return AUTH_REQUIRED("READ"); try { const q: Record<string,string>={}; for(const [k,v] of Object.entries(params)) if(v!==undefined) q[k]=v; return toResult(await marketApi.socialVibeTimeline(auth, q)); } catch(e) { return toError(e); } },
   );
 
   server.tool("onchainos_social_vibe_top_kols",
     "链上-分析 | 获取热门 KOL 列表【场景:查讨论这个代币的KOL】",
-    { chainIndex: z.string().describe("链ID(字符串)。如 '1'=ETH '501'=Solana。不确定先调 onchainos_market_supported_chain"), tokenAddress: z.string().describe("代币合约地址"), sortBy: z.enum(["1","2","3"]).optional().describe("1=互动量 2=提及数 3=曝光量"), timeFrame: z.enum(["1","2","3","4"]).optional(), limit: z.string().optional() },
+    { chainIndex: z.string().describe("链ID(字符串)。如 '1'=ETH '501'=Solana。不确定先调 onchainos_market_supported_chain"), tokenAddress: z.string().describe("代币合约地址(小写)。主链币传空字符串 ''。⚠️ 不知道地址 → 先调 onchainos_token_search"), sortBy: z.enum(["1","2","3"]).optional().describe("1=互动量 2=提及数 3=曝光量"), timeFrame: z.enum(["1","2","3","4"]).optional(), limit: z.string().optional() },
     { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async (params) => { if(!auth) return AUTH_REQUIRED("READ"); try { const q: Record<string,string>={}; for(const [k,v] of Object.entries(params)) if(v!==undefined) q[k]=v; return toResult(await marketApi.socialVibeTopKols(auth, q)); } catch(e) { return toError(e); } },
   );

@@ -74,7 +74,7 @@ export function registerTradeTools(server: McpServer, auth: Auth | null): void {
     "链上-Swap | 构建 ERC-20 代币授权交易 calldata【场景:授权DEX合约使用代币】",
     {
       chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '501'=Solana '8453'=Base。⚠️ 不确定先调 onchainos_dex_supported_chain"),
-      tokenContractAddress: z.string().describe("代币合约地址"),
+      tokenContractAddress: z.string().describe("代币合约地址(小写)。⚠️ 不知道地址 → 先调 onchainos_token_search 搜索。主链币不需要授权"),
       approveAmount: z.string().describe(
         "授权数量(最小单位, 含精度 decimals)。" +
         "⚠️ 精度说明: USDT(decimals=6) '1' USDT=1000000, DAI(decimals=18) '1' DAI=1000000000000000000。" +
@@ -103,7 +103,7 @@ export function registerTradeTools(server: McpServer, auth: Auth | null): void {
       ),
       swapMode: z.enum(["exactIn","exactOut"]).optional().default("exactIn").describe("exactIn=按卖出 exactOut=按买入(仅ETH/Base/BSC/Arbitrum的UniV2/V3支持)"),
       fromTokenAddress: z.string().describe("卖出代币合约地址(小写)。⚠️ 不知道地址 → 先调 onchainos_token_search 搜索。主链币传 '' 或原生地址"),
-      toTokenAddress: z.string().describe("买入代币合约地址(小写)。⚠️ 不知道地址 → 先调 onchainos_token_search 搜索"),
+      toTokenAddress: z.string().describe("买入代币合约地址(小写)。主链币传 '' 或原生地址。⚠️ 不知道地址 → 先调 onchainos_token_search 搜索"),
       userWalletAddress: z.string().describe("用户钱包地址"),
       slippagePercent: z.string().describe("滑点百分比。EVM:0-100, Solana:0-<100"),
       approveTransaction: z.boolean().optional().describe("true=一并返回授权calldata(signatureData), 省去单独调approve"),

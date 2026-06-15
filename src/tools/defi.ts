@@ -144,7 +144,7 @@ export function registerDefiTools(server: McpServer, auth: Auth | null): void {
       address: z.string().describe("用户钱包地址"),
       redeemPercent: z.string().optional().describe("赎回比例, 建议必传。'1'=100% '0.5'=50%。不传可能导致 aToken 动态余额 revert"),
       userInputList: z.array(z.object({
-        tokenAddress: z.string().describe("代币合约地址"),
+        tokenAddress: z.string().describe("代币合约地址(小写)。主链币传空字符串"),
         chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '501'=Solana。不确定先调 onchainos_defi_supported_chains"),
         coinAmount: z.string().optional().describe("数量"),
       })).optional().describe("输入代币列表。Farm/v2pool 传 LP Token, 其他情况传目标接收 token"),
@@ -178,7 +178,7 @@ export function registerDefiTools(server: McpServer, auth: Auth | null): void {
       principalIndex: z.string().optional().describe("到期订单 index。UNLOCKED_PRINCIPAL 时填写"),
       expectOutputList: z.array(z.object({
         chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '501'=Solana。不确定先调 onchainos_defi_supported_chains"),
-        tokenAddress: z.string().describe("代币合约地址"),
+        tokenAddress: z.string().describe("代币合约地址(小写)。主链币传空字符串"),
         coinAmount: z.string().describe("数量"),
       })).optional().describe("预期输出列表。仅 REWARD_MERKLE_BONUS 时填写"),
     },
