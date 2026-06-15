@@ -6,11 +6,12 @@
  * 使用原生 node:http 而非 Express, 避免 Express 5 与 @hono/node-server 兼容问题
  */
 import "dotenv/config";
+import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import type { Auth } from "./adapters/shared.js";
+import { resolveAuth } from "./adapters/shared.js";
 import { registerBalanceTools } from "./tools/balance.js";
 import { registerGatewayTools } from "./tools/gateway.js";
 import { registerTxHistoryTools } from "./tools/txhistory.js";
@@ -22,14 +23,9 @@ import { registerMarketTools } from "./tools/market.js";
 import { registerWsTools } from "./tools/ws.js";
 import { registerSkillTools } from "./tools/skills.js";
 
-function resolveAuth(): Auth | null {
-  const k = process.env.OKX_API_KEY, s = process.env.OKX_SECRET_KEY, p = process.env.OKX_PASSPHRASE;
-  if (k && s && p) return { apiKey: k, secret: s, passphrase: p };
-  const a = process.argv.slice(2), g = (f: string) => { const i = a.indexOf(f); return i >= 0 ? a[i + 1] : undefined; };
-  const ka = g("--okx-api-key") ?? g("-k"), sa = g("--okx-secret") ?? g("-s"), pa = g("--okx-passphrase") ?? g("-p");
-  if (ka && sa && pa) return { apiKey: ka, secret: sa, passphrase: pa };
-  return null;
-}
+const { version } = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf-8"),
+);
 
 /** 简陋 body parser — 读 JSON body 到 req.body */
 function jsonBody(req: IncomingMessage): Promise<unknown> {
@@ -44,6 +40,29 @@ function jsonBody(req: IncomingMessage): Promise<unknown> {
     req.on("error", reject);
   });
 }
+
+// ── 基础 Rate Limiter ────────────────────────────────────────
+const reqCounts = new Map<string, { count: number; resetAt: number }>();
+const RATE_WINDOW_MS = 1000; // 1 秒窗口
+const RATE_MAX = 20;         // 每窗口最多 20 请求
+
+function rateLimited(ip: string): boolean {
+  const now = Date.now();
+  const entry = reqCounts.get(ip);
+  if (!entry || now > entry.resetAt) {
+    reqCounts.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS });
+    return false;
+  }
+  entry.count++;
+  return entry.count > RATE_MAX;
+}
+// 每 60s 清理过期条目
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of reqCounts) {
+    if (now > v.resetAt) reqCounts.delete(k);
+  }
+}, 60_000).unref();
 
 async function main() {
   const auth = resolveAuth();
@@ -63,7 +82,7 @@ async function main() {
   });
 
   // 2. MCP Server + 全部工具注册
-  const server = new McpServer({ name: "hchain-mcp", version: "1.0.1" });
+  const server = new McpServer({ name: "hchain-mcp", version });
 
   registerBalanceTools(server, auth);
   registerGatewayTools(server, auth);
@@ -81,6 +100,14 @@ async function main() {
 
   // 4. 原生 HTTP server
   const httpServer = createServer(async (req, res) => {
+    // Rate limiting (按 IP)
+    const ip = req.socket.remoteAddress ?? "unknown";
+    if (rateLimited(ip)) {
+      res.writeHead(429, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Too many requests", retryAfterMs: RATE_WINDOW_MS }));
+      return;
+    }
+
     // CORS
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
@@ -127,6 +154,19 @@ async function main() {
     console.error(`[h-mcp] MCP endpoint: POST http://${host}:${port}/mcp`);
     console.error(`[h-mcp] Health check: GET  http://${host}:${port}/health`);
   });
+
+  // Graceful shutdown
+  function shutdown(signal: string) {
+    console.error(`[h-mcp] 收到 ${signal}，优雅关闭 HTTP 服务器`);
+    httpServer.close(() => {
+      console.error("[h-mcp] HTTP 服务器已关闭");
+      process.exit(0);
+    });
+    // 强制关闭超时
+    setTimeout(() => { console.error("[h-mcp] 强制关闭"); process.exit(1); }, 5000).unref();
+  }
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
 }
 
 main().catch(e => { console.error("[h-mcp] 启动失败:", e); process.exit(1); });

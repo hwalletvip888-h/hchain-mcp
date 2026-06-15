@@ -11,28 +11,28 @@ import type { Auth } from "../adapters/shared.js";
 export function registerTradeTools(server: McpServer, auth: Auth | null): void {
 
   server.tool("onchainos_dex_supported_chain",
-    "CAT:[链上-Swap] | ## 功能: 获取 DEX 聚合器支持的链, 返回 chainIndex/chainName/dexTokenApproveAddress\n## 场景: 兑换前确认链 + 获取 DEX Router 授权地址\n## 关键词: DEX, 链列表, chainIndex, router, approve\n## 参数:\n##   - chainIndex: 可选过滤\n## 鉴权: 需要 API Key(只读)\n## 风险: READ - 只读查询\n## 返回量: 微小 ~2KB\n## 关联: dexTokenApproveAddress -> onchainos_dex_approve_transaction",
+    "链上-Swap | 获取 DEX 聚合器支持的链及 Router 授权地址",
     { chainIndex: z.string().optional().describe("链索引, 可选过滤。不传返回所有链") },
-    { readOnlyHint: true },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async ({ chainIndex }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await tradeApi.supportedChain(auth, chainIndex)); } catch(e) { return toError(e); } },
   );
 
   server.tool("onchainos_dex_all_tokens",
-    "CAT:[链上-Swap] | ## 功能: 获取链上 DEX 可交易代币列表, 返回 decimals/tokenContractAddress/tokenName/tokenSymbol/tokenLogoUrl\n## 场景: 查找代币合约地址和精度\n## 关键词: 代币列表, tokens, decimals\n## 参数:\n##   - chainIndex: 链索引(必填)\n## 鉴权: 需要 API Key(只读)\n## 风险: READ - 只读查询\n## 返回量: 大 ~100KB\n## 关联: onchainos_dex_supported_chain -> 本工具 -> onchainos_dex_quote",
+    "链上-Swap | 获取链上 DEX 可交易代币列表",
     { chainIndex: z.string().describe("链索引。'1'=ETH '56'=BSC '137'=Polygon '8453'=Base '501'=Solana '784'=Sui") },
-    { readOnlyHint: true },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async ({ chainIndex }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await tradeApi.allTokens(auth, chainIndex)); } catch(e) { return toError(e); } },
   );
 
   server.tool("onchainos_dex_liquidity",
-    "CAT:[链上-Swap] | ## 功能: 获取链上流动性源列表, 返回 id/name/logo\n## 场景: 了解 DEX 覆盖范围, 用于 quote 的 dexIds/excludeDexIds 参数\n## 关键词: 流动性, liquidity, DEX列表, dexId\n## 参数:\n##   - chainIndex: 链索引(必填)\n## 鉴权: 需要 API Key(只读)\n## 风险: READ - 只读查询\n## 返回量: 中等 ~10KB\n## 关联: 本工具选流动性 -> onchainos_dex_quote (传 dexIds/excludeDexIds)",
+    "链上-Swap | 获取链上流动性源列表",
     { chainIndex: z.string().describe("链索引") },
-    { readOnlyHint: true },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async ({ chainIndex }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await tradeApi.liquidity(auth, chainIndex)); } catch(e) { return toError(e); } },
   );
 
   server.tool("onchainos_dex_quote",
-    "CAT:[链上-Swap] | ## 功能: 获取最优兑换报价, 返回 toTokenAmount/priceImpactPercent/dexRouterList/estimateGasFee/tradeFee\n## 场景: 交易前比价。返回 fromToken/toToken 含 isHoneyPot(貔貅检测)/taxRate(税率)\n## 关键词: 报价, quote, 价格影响, 路由, swapMode, exactIn, exactOut\n## 参数:\n##   - chainIndex/amount/fromTokenAddress/toTokenAddress(必填)\n##   - swapMode: exactIn(默认)/exactOut(必填)\n##   - dexIds/excludeDexIds: 流动性过滤(可选)\n##   - priceImpactProtectionPercent: 价格影响保护(可选, 默认90%)\n##   - feePercent/directRoute/singleRouteOnly/singlePoolPerHop/assetAwareRouting(可选)\n## 鉴权: 需要 API Key(只读)\n## 风险: READ - 只读查询\n## 返回量: 中等 ~10KB\n## 关联: onchainos_dex_all_tokens -> 本工具 -> onchainos_dex_swap / onchainos_dex_approve_transaction",
+    "链上-Swap | 获取最优兑换报价及价格影响分析",
     {
       chainIndex: z.string().describe("链索引"),
       amount: z.string().describe("交易数量, 含精度(最小单位)。如 1 USDT=1000000, 1 DAI=1000000000000000000"),
@@ -50,7 +50,7 @@ export function registerTradeTools(server: McpServer, auth: Auth | null): void {
       assetAwareRouting: z.boolean().optional().describe("true=仅使用匹配资产类型的路由(U-U/U-Native)"),
       forJitoBundle: z.boolean().optional().describe("true=排除不兼容Jito的DEX"),
     },
-    { readOnlyHint: true },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async (params) => {
       if(!auth) return AUTH_REQUIRED("READ");
       try {
@@ -67,13 +67,13 @@ export function registerTradeTools(server: McpServer, auth: Auth | null): void {
   );
 
   server.tool("onchainos_dex_approve_transaction",
-    "CAT:[链上-Swap] | ## 功能: 构建 ERC-20 授权交易 calldata, 返回 data/dexContractAddress/gasLimit/gasPrice\n## 场景: ERC20 Swap 前授权 DEX Router 动用代币\n## 关键词: approve, 授权, ERC20, calldata, dexContractAddress\n## 参数:\n##   - chainIndex/tokenContractAddress/approveAmount(必填)\n## 鉴权: 需要 API Key(交易)\n## 风险: WRITE - 返回 calldata\n## 返回量: 微小 ~1KB\n## 关联: onchainos_dex_quote -> 本工具 -> onchainos_gateway_broadcast",
+    "链上-Swap | 构建 ERC-20 代币授权交易 calldata",
     {
       chainIndex: z.string().describe("链索引"),
       tokenContractAddress: z.string().describe("代币合约地址"),
       approveAmount: z.string().describe("授权数量, 含精度。如授权1 USDT=1000000, 1 DAI=1000000000000000000"),
     },
-    { destructiveHint: true, idempotentHint: true },
+    { readOnlyHint: false, idempotentHint: true, destructiveHint: true },
     async ({ chainIndex, tokenContractAddress, approveAmount }) => {
       if(!auth) return AUTH_REQUIRED("TRADE");
       try {
@@ -85,7 +85,7 @@ export function registerTradeTools(server: McpServer, auth: Auth | null): void {
   );
 
   server.tool("onchainos_dex_swap",
-    "CAT:[链上-Swap] | ## 功能: 构建兑换交易 calldata, 返回 tx(from/to/data/value/gas/gasPrice/maxPriorityFeePerGas/minReceiveAmount/maxSpendAmount/signatureData)\n## 场景: 授权后构建 swap。approveTransaction=true可一并返回授权calldata省去单独调approve\n## 关键词: swap, 兑换, calldata, 交易构建, MEV, Jito\n## 参数:\n##   - chainIndex/amount/fromTokenAddress/toTokenAddress/userWalletAddress/slippagePercent(必填)\n##   - swapMode/approveTransaction/approveAmount/feePercent/swapReceiverAddress(可选)\n##   - autoSlippage/maxAutoslippagePercent/priceImpactProtectionPercent(可选)\n##   - dexIds/excludeDexIds/excludePoolAddresses/disableRFQ/directRoute(可选)\n##   - computeUnitPrice/computeUnitLimit/tips: Solana参数(可选)\n##   - gaslimit/gasLevel: EVM gas参数(可选)\n##   - positiveSlippagePercent/positiveSlippageFeeAddress: 正滑点分佣(可选,白名单)\n## 鉴权: 需要 API Key(交易)\n## 风险: WRITE - 返回 calldata\n## 返回量: 中等 ~5KB\n## 关联: onchainos_dex_quote -> 本工具 -> onchainos_gateway_simulate -> onchainos_gateway_broadcast",
+    "链上-Swap | 构建兑换交易 calldata",
     {
       chainIndex: z.string().describe("链索引"),
       amount: z.string().describe("交易数量, 含精度(最小单位)。如1 USDT=1000000"),
@@ -123,7 +123,7 @@ export function registerTradeTools(server: McpServer, auth: Auth | null): void {
       maxCalldataSize: z.string().optional().describe("最大calldata大小估计值"),
       maxAccounts: z.string().optional().describe("最大账户数估计值"),
     },
-    { destructiveHint: true },
+    { readOnlyHint: false, idempotentHint: false, destructiveHint: true },
     async (params) => {
       if(!auth) return AUTH_REQUIRED("TRADE");
       try {
@@ -142,7 +142,7 @@ export function registerTradeTools(server: McpServer, auth: Auth | null): void {
   );
 
   server.tool("onchainos_dex_swap_instruction",
-    "CAT:[链上-Swap] | ## 功能: 获取 Solana 兑换指令(高级), 返回 instructionLists/addressLookupTableAccount/tx/routerResult\n## 场景: Solana 自定义交易组装, 可加自己的指令\n## 关键词: Solana, swap instruction, 高级, lookup table\n## 参数:\n##   - chainIndex/amount/fromTokenAddress/toTokenAddress/userWalletAddress/slippagePercent(必填)\n##   - autoSlippage/maxAutoSlippagePercent/feePercent/useTokenLedger/swapReceiverAddress(可选)\n##   - priceImpactProtectionPercent/dexIds/excludeDexIds/disableRFQ/directRoute(可选)\n##   - computeUnitPrice/computeUnitLimit: Solana gas(可选)\n##   - positiveSlippagePercent/positiveSlippageFeeAddress: 正滑点分佣(可选,白名单)\n## 鉴权: 需要 API Key(只读)\n## 风险: READ - 只读查询\n## 返回量: 大 ~30KB\n## 关联: Solana场景: onchainos_dex_quote -> 本工具 -> 自行签名广播",
+    "链上-Swap | 获取 Solana 兑换指令(高级)",
     {
       chainIndex: z.string().describe("Solana固定'501'"),
       amount: z.string().describe("卖出数量, 含精度"),
@@ -169,7 +169,7 @@ export function registerTradeTools(server: McpServer, auth: Auth | null): void {
       forJitoBundle: z.boolean().optional().describe("true=排除不兼容Jito的DEX"),
       excludePoolAddresses: z.string().optional().describe("过滤池子地址,逗号分隔,最多20"),
     },
-    { readOnlyHint: true },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async (params) => {
       if(!auth) return AUTH_REQUIRED("READ");
       try {
@@ -181,13 +181,13 @@ export function registerTradeTools(server: McpServer, auth: Auth | null): void {
   );
 
   server.tool("onchainos_dex_swap_history",
-    "CAT:[链上-Swap] | ## 功能: 查询兑换交易详情(状态/fromToken/toToken/txFee)\n## 场景: 广播后确认交易状态\n## 关键词: swap history, 交易状态, txHash\n## 参数:\n##   - chainIndex: 链索引(必填)\n##   - txHash: 交易哈希(必填)\n##   - isFromMyProject: 是否本项目(可选)\n## 鉴权: 需要 API Key(只读)\n## 风险: READ - 只读查询\n## 返回量: 微小 ~2KB\n## 关联: onchainos_gateway_broadcast -> 本工具",
+    "链上-Swap | 查询兑换交易状态及详情",
     {
       chainIndex: z.string().describe("链索引"),
       txHash: z.string().describe("交易哈希"),
       isFromMyProject: z.boolean().optional().describe("true=仅查本API Key订单 false=查任意OKX DEX订单"),
     },
-    { readOnlyHint: true },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async ({ chainIndex, txHash, isFromMyProject }) => {
       if(!auth) return AUTH_REQUIRED("READ");
       try { return toResult(await tradeApi.swapHistory(auth, chainIndex, txHash, isFromMyProject)); } catch(e) { return toError(e); }

@@ -87,6 +87,16 @@ export function toError(e: unknown): CallToolResult {
   };
 }
 
+// ── resolveAuth ──────────────────────────────────────────────
+export function resolveAuth(): Auth | null {
+  const k = process.env.OKX_API_KEY, s = process.env.OKX_SECRET_KEY, p = process.env.OKX_PASSPHRASE;
+  if (k && s && p) return { apiKey: k, secret: s, passphrase: p };
+  const a = process.argv.slice(2), g = (f: string) => { const i = a.indexOf(f); return i >= 0 ? a[i + 1] : undefined; };
+  const ka = g("--okx-api-key") ?? g("-k"), sa = g("--okx-secret") ?? g("-s"), pa = g("--okx-passphrase") ?? g("-p");
+  if (ka && sa && pa) return { apiKey: ka, secret: sa, passphrase: pa };
+  return null;
+}
+
 // ── AUTH_REQUIRED ───────────────────────────────────────────
 export function AUTH_REQUIRED(scope: "READ" | "TRADE" = "READ"): CallToolResult {
   return {

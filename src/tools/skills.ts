@@ -64,7 +64,7 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
   // ── 1. 交易全链路 ──────────────────────────────────────
 
   server.tool("onchainos_skill_trade_pipeline",
-    "CAT:[链上-Swap] | ## 功能: 全自动交易管线: 报价→(授权)→构建交易→模拟, 返回完整 calldata 和逐步骤结果\n## 场景: \"用1 SOL换USDC\" → 自动判断主链币省去授权, ERC20自动加approve\n## 关键词: pipeline, trade, 全链路, swap, 自动, simulate, approve\n## 参数:\n##   - chainIndex/fromTokenAddress/toTokenAddress/amount/userWalletAddress(必填)\n##   - slippagePercent: 滑点(可选,默认1.0)\n##   - gasLevel: Gas等级(可选,默认average)\n## 鉴权: 需要 API Key(交易)\n## 风险: WRITE - 构建 calldata, 不上链\n## 返回量: 中等 ~15KB\n## 关联: 本工具产出 calldata → 用户签名 → onchainos_gateway_broadcast",
+    "链上-Skill | 全自动交易管线: 报价→授权→构建→模拟",
     {
       chainIndex: z.string().describe("链索引。如 '1'=ETH '501'=Solana '8453'=Base。从 onchainos_dex_supported_chain 获取"),
       fromTokenAddress: z.string().describe("卖出代币合约地址。主链币传空字符串''或'0xEeeeEeeeEeeeEeeeEeeeEeeeEeeeEeeeEeeeEEeE'"),
@@ -74,7 +74,7 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
       slippagePercent: z.string().optional().default("1.0").describe("滑点百分比, 默认1.0。建议从 onchainos_skill_smart_slippage 获取"),
       gasLevel: z.enum(["slow","average","fast"]).optional().describe("Gas等级, 默认average"),
     },
-    { destructiveHint: true },
+    { readOnlyHint: false, idempotentHint: false, destructiveHint: true },
     async (params) => {
       if (!auth) return AUTH_REQUIRED("TRADE");
       const steps: StepResult[] = [];
@@ -170,12 +170,12 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
   // ── 2. 风险检测链 ──────────────────────────────────────
 
   server.tool("onchainos_skill_risk_detect",
-    "CAT:[链上-行情] | ## 功能: 综合风险检测: 安全分析+持仓集中度+打包检测+开发者信息, 输出0-100风险评分\n## 场景: 交易土狗/新代币前必调, 检测貔貅/Rug Pull/狙击手/打包\n## 关键词: risk, 风险, 安全, honeypot, 貔貅, rug, bundle, cluster, dev\n## 参数:\n##   - chainIndex/tokenContractAddress(必填)\n## 鉴权: 需要 API Key(只读)\n## 风险: READ - 只读查询\n## 返回量: 中等 ~10KB\n## 关联: onchainos_token_search → 本工具 → onchainos_skill_trade_pipeline(低风险通过后)",
+    "链上-Skill | 综合风险检测: 安全+集中度+打包+开发者, 输出0-100评分",
     {
       chainIndex: z.string().describe("链索引。如 '501'=Solana '1'=ETH '8453'=Base"),
       tokenContractAddress: z.string().describe("代币合约地址。从 onchainos_token_search 获取"),
     },
-    { readOnlyHint: true },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async ({ chainIndex, tokenContractAddress }) => {
       if (!auth) return AUTH_REQUIRED("READ");
 
@@ -271,14 +271,14 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
   // ── 3. 智能滑点推荐 ────────────────────────────────────
 
   server.tool("onchainos_skill_smart_slippage",
-    "CAT:[链上-Swap] | ## 功能: 基于波动率和价格影响智能推荐最优滑点百分比\n## 场景: Agent 构建交易前获取推荐滑点, 避免因滑点太低被拒或太高被夹\n## 关键词: slippage, 滑点, 推荐, volatility, 波动率, price impact\n## 参数:\n##   - chainIndex/fromTokenAddress/toTokenAddress(必填)\n##   - amount: 交易数量(可选,用于评估价格影响)\n## 鉴权: 需要 API Key(只读)\n## 风险: READ - 只读查询\n## 返回量: 微小 ~3KB\n## 关联: 本工具 → onchainos_dex_swap / onchainos_skill_trade_pipeline(传 recommendedSlippagePercent)",
+    "链上-Skill | 基于波动率和价格影响智能推荐滑点",
     {
       chainIndex: z.string().describe("链索引。如 '501'=Solana '1'=ETH"),
       fromTokenAddress: z.string().describe("卖出代币合约地址"),
       toTokenAddress: z.string().describe("买入代币合约地址"),
       amount: z.string().optional().describe("交易数量(最小单位)。填了会调 quote 评估价格影响, 不填仅用波动率估算"),
     },
-    { readOnlyHint: true },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async ({ chainIndex, fromTokenAddress, toTokenAddress, amount }) => {
       if (!auth) return AUTH_REQUIRED("READ");
       const steps: StepResult[] = [];
@@ -373,7 +373,7 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
   // ── 4. 信号聚合 ────────────────────────────────────────
 
   server.tool("onchainos_skill_signal_aggregate",
-    "CAT:[链上-信号] | ## 功能: 获取买入信号+风险过滤, 自动剔除貔貅/高风险代币, 返回带安全评级的精选信号\n## 场景: 跟踪聪明钱/KOL/鲸鱼动态, 一站式发现+过滤\n## 关键词: signal, 信号, 聪明钱, 聚合, 过滤, 风险, KOL, 鲸鱼\n## 参数:\n##   - chainIndex(必填)\n##   - walletType: 钱包类型过滤(可选)\n##   - minAmountUsd/maxAmountUsd: 金额筛选(可选)\n##   - limit: 返回条数(可选,默认10,最大20)\n## 鉴权: 需要 API Key(只读)\n## 风险: READ - 只读查询\n## 返回量: 中等 ~30KB\n## 关联: 本工具 → onchainos_skill_risk_detect(深入分析) → onchainos_skill_trade_pipeline(交易)",
+    "链上-Skill | 信号聚合: 获取买入信号+风险过滤+安全评级",
     {
       chainIndex: z.string().describe("链索引。如 '1'=ETH '501'=Solana。从 onchainos_signal_supported_chain 获取"),
       walletType: z.string().optional().describe("钱包类型: '1'=聪明钱 '2'=KOL '3'=鲸鱼, 逗号分隔。不传不过滤"),
@@ -381,7 +381,7 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
       maxAmountUsd: z.string().optional().describe("最大交易金额(USD)"),
       limit: z.string().optional().default("10").describe("返回信号条数, 默认10, 最大20"),
     },
-    { readOnlyHint: true },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async ({ chainIndex, walletType, minAmountUsd, maxAmountUsd, limit }) => {
       if (!auth) return AUTH_REQUIRED("READ");
       const steps: StepResult[] = [];
@@ -394,7 +394,7 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
         if (walletType) body.walletType = walletType;
         if (minAmountUsd) body.minAmountUsd = minAmountUsd;
         if (maxAmountUsd) body.maxAmountUsd = maxAmountUsd;
-        body.limit = Math.min(limitNum * 3, 60); // 过度获取以便过滤后有足够数据
+        body.limit = Math.min(limitNum * 3, 60);
 
         const raw = await marketApi.signalList(auth, body);
         signals = (Array.isArray(raw) ? raw : (raw as any)?.dataList ?? (raw as any)?.signals ?? []) as any[];
@@ -447,7 +447,6 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
           const addr = sig.tokenContractAddress ?? sig.tokenAddress ?? "";
           const key = `${ci}:${addr}`;
           const risk = riskCache[key];
-          // 过滤明显风险
           if (risk) {
             const isHoney = risk.isHoneypot || risk.isHoneyPot;
             const rl = (risk.riskLevel ?? "").toUpperCase();
