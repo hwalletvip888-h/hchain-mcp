@@ -12,7 +12,7 @@
 - README 徽章（npm version/downloads/license/CI）
 
 ### Changed
-- 全部 99 个工具描述从 300-600 字结构化文档精简为一行简洁描述
+- 全部 101 个工具描述从 300-600 字结构化文档精简为一行简洁描述
 - 补齐 tool annotations：所有工具增加 readOnlyHint + idempotentHint + destructiveHint
 - package.json：增加 files/bin/repository/engines/keywords 字段
 - 移除未使用的 express 依赖

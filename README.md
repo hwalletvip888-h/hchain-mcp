@@ -6,7 +6,7 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/hwalletvip888-h/hchain-mcp/ci.yml?style=flat-square)](https://github.com/hwalletvip888-h/hchain-mcp/actions)
 [![License](https://img.shields.io/npm/l/hchain-mcp?style=flat-square)](LICENSE)
 
-AI-native multi-chain trading MCP Server — 100 tools over HTTP & stdio.
+AI-native multi-chain trading MCP Server — 101 tools over HTTP & stdio.
 
 ## Install
 
@@ -78,9 +78,9 @@ Or HTTP mode:
 }
 ```
 
-## Tools (100)
+## Tools (101)
 
-### Phase 1 — Base APIs (95 tools)
+### Phase 1 — Base APIs (96 tools)
 
 | Module | Count | Description |
 |--------|:-----:|-------------|
@@ -93,6 +93,7 @@ Or HTTP mode:
 | Balance | 4 | Multi-chain balance |
 | WS | 4 | WebSocket connect/subscribe |
 | TxHistory | 3 | Transaction history |
+| Help | 1 | Interactive help & navigation |
 
 ### Phase 2 — API Composition Skills (5 tools)
 

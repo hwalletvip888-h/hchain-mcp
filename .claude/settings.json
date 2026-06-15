@@ -2,7 +2,7 @@
   "mcpServers": {
     "hchain-mcp": {
       "command": "node",
-      "args": ["C:\\Users\\CF\\Desktop\\h-mcp-new\\dist\\index.js"],
+      "args": ["C:\\Users\\CF\\Desktop\\hchain-mcp\\dist\\index.js"],
       "env": {
         "OKX_API_KEY": "55086169-ef4d-4832-8d55-f60ca0acdfcf",
         "OKX_SECRET_KEY": "080FD20B79CEB05267E5C88D8D63E61B",
