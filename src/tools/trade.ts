@@ -11,34 +11,38 @@ import type { Auth } from "../adapters/shared.js";
 export function registerTradeTools(server: McpServer, auth: Auth | null): void {
 
   server.tool("onchainos_dex_supported_chain",
-    "链上-Swap | 获取 DEX 聚合器支持的链及 Router 授权地址",
-    { chainIndex: z.string().optional().describe("链索引, 可选过滤。不传返回所有链") },
+    "链上-Swap | 获取 DEX 聚合器支持的链及 Router 授权地址【场景:查哪些链支持DEX兑换/Router地址】",
+    { chainIndex: z.string().optional().describe("链ID(字符串)。不传返回所有链。常见值: '1'=ETH '56'=BSC '501'=Solana '8453'=Base") },
     { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async ({ chainIndex }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await tradeApi.supportedChain(auth, chainIndex)); } catch(e) { return toError(e); } },
   );
 
   server.tool("onchainos_dex_all_tokens",
-    "链上-Swap | 获取链上 DEX 可交易代币列表",
-    { chainIndex: z.string().describe("链索引。'1'=ETH '56'=BSC '137'=Polygon '8453'=Base '501'=Solana '784'=Sui") },
+    "链上-Swap | 获取链上 DEX 可交易代币列表【场景:查链上所有可交易的代币】",
+    { chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '137'=Polygon '8453'=Base '501'=Solana '784'=Sui。⚠️ 不确定先调 onchainos_dex_supported_chain") },
     { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async ({ chainIndex }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await tradeApi.allTokens(auth, chainIndex)); } catch(e) { return toError(e); } },
   );
 
   server.tool("onchainos_dex_liquidity",
-    "链上-Swap | 获取链上流动性源列表",
-    { chainIndex: z.string().describe("链索引") },
+    "链上-Swap | 获取链上流动性源列表【场景:查可用的DEX流动性池】",
+    { chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '501'=Solana '8453'=Base。⚠️ 不确定先调 onchainos_dex_supported_chain") },
     { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async ({ chainIndex }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await tradeApi.liquidity(auth, chainIndex)); } catch(e) { return toError(e); } },
   );
 
   server.tool("onchainos_dex_quote",
-    "链上-Swap | 获取最优兑换报价及价格影响分析",
+    "链上-Swap | 获取最优兑换报价及价格影响分析【场景:查兑换报价/最优价格/滑点影响】",
     {
-      chainIndex: z.string().describe("链索引"),
-      amount: z.string().describe("交易数量, 含精度(最小单位)。如 1 USDT=1000000, 1 DAI=1000000000000000000"),
+      chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '501'=Solana '8453'=Base。⚠️ 不确定先调 onchainos_dex_supported_chain"),
+      amount: z.string().describe(
+        "卖出数量(最小单位, 含精度 decimals)。" +
+        "⚠️ 不同代币精度不同: USDT(decimals=6) '1'=1000000, ETH(decimals=18) '1'=1000000000000000000, SOL(decimals=9) '1'=1000000000。" +
+        "公式: amount = 人类可读数量 × 10^decimals。不确定 decimals 先调 onchainos_token_basic_info"
+      ),
       swapMode: z.enum(["exactIn","exactOut"]).optional().default("exactIn").describe("exactIn=按卖出数量报价 exactOut=按买入数量报价。exactOut仅ETH/Base/BSC/Arbitrum支持UniV2/V3"),
-      fromTokenAddress: z.string().describe("卖出代币合约地址"),
-      toTokenAddress: z.string().describe("买入代币合约地址"),
+      fromTokenAddress: z.string().describe("卖出代币合约地址(小写)。⚠️ 不知道地址 → 先调 onchainos_token_search。主链币传 '' 或原生地址(如SOL:11111111111111111111111111111111)"),
+      toTokenAddress: z.string().describe("买入代币合约地址(小写)。⚠️ 不知道地址 → 先调 onchainos_token_search。主链币传 '' 或原生地址"),
       dexIds: z.string().optional().describe("限定流动性池 dexId, 逗号分隔。从 onchainos_dex_liquidity 获取"),
       excludeDexIds: z.string().optional().describe("排除流动性池 dexId, 逗号分隔"),
       priceImpactProtectionPercent: z.string().optional().describe("价格影响保护百分比(0-100)。超此值报价被拒。默认90, 设100禁用"),
@@ -67,11 +71,15 @@ export function registerTradeTools(server: McpServer, auth: Auth | null): void {
   );
 
   server.tool("onchainos_dex_approve_transaction",
-    "链上-Swap | 构建 ERC-20 代币授权交易 calldata",
+    "链上-Swap | 构建 ERC-20 代币授权交易 calldata【场景:授权DEX合约使用代币】",
     {
-      chainIndex: z.string().describe("链索引"),
+      chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '501'=Solana '8453'=Base。⚠️ 不确定先调 onchainos_dex_supported_chain"),
       tokenContractAddress: z.string().describe("代币合约地址"),
-      approveAmount: z.string().describe("授权数量, 含精度。如授权1 USDT=1000000, 1 DAI=1000000000000000000"),
+      approveAmount: z.string().describe(
+        "授权数量(最小单位, 含精度 decimals)。" +
+        "⚠️ 精度说明: USDT(decimals=6) '1' USDT=1000000, DAI(decimals=18) '1' DAI=1000000000000000000。" +
+        "公式: amount = 人类可读数量 × 10^decimals。不确定 decimals 先调 onchainos_token_basic_info"
+      ),
     },
     { readOnlyHint: false, idempotentHint: true, destructiveHint: true },
     async ({ chainIndex, tokenContractAddress, approveAmount }) => {
@@ -85,17 +93,24 @@ export function registerTradeTools(server: McpServer, auth: Auth | null): void {
   );
 
   server.tool("onchainos_dex_swap",
-    "链上-Swap | 构建兑换交易 calldata",
+    "链上-Swap | 构建兑换交易 calldata【场景:构建交易/准备签名数据/获取calldata】",
     {
-      chainIndex: z.string().describe("链索引"),
-      amount: z.string().describe("交易数量, 含精度(最小单位)。如1 USDT=1000000"),
+      chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '501'=Solana '8453'=Base。⚠️ 不确定先调 onchainos_dex_supported_chain"),
+      amount: z.string().describe(
+        "卖出数量(最小单位, 含精度 decimals)。" +
+        "⚠️ 不同代币精度不同: USDT(decimals=6) '1'=1000000, ETH(decimals=18) '1'=1000000000000000000。" +
+        "公式: amount = 人类可读数量 × 10^decimals"
+      ),
       swapMode: z.enum(["exactIn","exactOut"]).optional().default("exactIn").describe("exactIn=按卖出 exactOut=按买入(仅ETH/Base/BSC/Arbitrum的UniV2/V3支持)"),
-      fromTokenAddress: z.string().describe("卖出代币地址"),
-      toTokenAddress: z.string().describe("买入代币地址"),
+      fromTokenAddress: z.string().describe("卖出代币合约地址(小写)。⚠️ 不知道地址 → 先调 onchainos_token_search 搜索。主链币传 '' 或原生地址"),
+      toTokenAddress: z.string().describe("买入代币合约地址(小写)。⚠️ 不知道地址 → 先调 onchainos_token_search 搜索"),
       userWalletAddress: z.string().describe("用户钱包地址"),
       slippagePercent: z.string().describe("滑点百分比。EVM:0-100, Solana:0-<100"),
       approveTransaction: z.boolean().optional().describe("true=一并返回授权calldata(signatureData), 省去单独调approve"),
-      approveAmount: z.string().optional().describe("授权数量, 含精度。approveTransaction=true时使用"),
+      approveAmount: z.string().optional().describe(
+        "授权数量(最小单位, 含精度 decimals)。" +
+        "approveTransaction=true时使用。精度说明同 amount 参数"
+      ),
       autoSlippage: z.boolean().optional().describe("true=自动滑点覆盖slippagePercent"),
       maxAutoslippagePercent: z.string().optional().describe("自动滑点上限百分比"),
       feePercent: z.string().optional().describe("分佣百分比。Solana最大10%, 其他链最大3%"),
@@ -142,12 +157,16 @@ export function registerTradeTools(server: McpServer, auth: Auth | null): void {
   );
 
   server.tool("onchainos_dex_swap_instruction",
-    "链上-Swap | 获取 Solana 兑换指令(高级)",
+    "链上-Swap | 获取 Solana 兑换指令(高级)【场景:Solana高级兑换/获取交易指令】",
     {
-      chainIndex: z.string().describe("Solana固定'501'"),
-      amount: z.string().describe("卖出数量, 含精度"),
-      fromTokenAddress: z.string().describe("卖出代币Mint地址"),
-      toTokenAddress: z.string().describe("买入代币Mint地址"),
+      chainIndex: z.string().describe("链ID。此工具仅支持 Solana('501')。固定传 '501'"),
+      amount: z.string().describe(
+        "卖出数量(最小单位, 含精度 decimals)。" +
+        "⚠️ Solana 代币精度不同: USDC(decimals=6), SOL(decimals=9)。" +
+        "公式: amount = 人类可读数量 × 10^decimals"
+      ),
+      fromTokenAddress: z.string().describe("卖出代币Mint地址(Solana)。⚠️ 不知道地址 → 先调 onchainos_token_search 搜索。SOL原生=11111111111111111111111111111111"),
+      toTokenAddress: z.string().describe("买入代币Mint地址(Solana)。⚠️ 不知道地址 → 先调 onchainos_token_search 搜索"),
       userWalletAddress: z.string().describe("Solana钱包地址"),
       slippagePercent: z.string().describe("滑点百分比。Solana:0-<100"),
       autoSlippage: z.boolean().optional().describe("true=自动滑点"),
@@ -181,9 +200,9 @@ export function registerTradeTools(server: McpServer, auth: Auth | null): void {
   );
 
   server.tool("onchainos_dex_swap_history",
-    "链上-Swap | 查询兑换交易状态及详情",
+    "链上-Swap | 查询兑换交易状态及详情【场景:查兑换是否成功/交易状态】",
     {
-      chainIndex: z.string().describe("链索引"),
+      chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '501'=Solana '8453'=Base。⚠️ 不确定先调 onchainos_dex_supported_chain"),
       txHash: z.string().describe("交易哈希"),
       isFromMyProject: z.boolean().optional().describe("true=仅查本API Key订单 false=查任意OKX DEX订单"),
     },

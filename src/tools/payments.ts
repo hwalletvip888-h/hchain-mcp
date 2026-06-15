@@ -17,7 +17,7 @@ export function registerPaymentsTools(server: McpServer, auth: Auth | null): voi
   // ── Agent 端 A2A 单次支付 ─────────────────────────────
 
   server.tool("onchainos_payment_create",
-    "链上-支付 | 创建单次付款(charge)",
+    "链上-支付 | 创建单次付款(charge)【场景:收款/创建支付订单】",
     {
       amount: z.string().describe("收款金额, 人类可读(如'0.1'=0.1 USDT0)"),
       symbol: z.enum(["USD₮0","USDC","USDG"]).describe("代币符号: USD_T0/USDC/USDG"),
@@ -50,7 +50,7 @@ export function registerPaymentsTools(server: McpServer, auth: Auth | null): voi
   );
 
   server.tool("onchainos_payment_detail",
-    "链上-支付 | 拉取付款详情(challenge)",
+    "链上-支付 | 拉取付款详情(challenge)【场景:买家查看付款信息/challenge】",
     {
       paymentId: z.string().describe("付款ID。格式 a2a_XXXX。从付款链接 https://pay.okx.com/p/{paymentId} 或卖家消息获取"),
     },
@@ -61,7 +61,7 @@ export function registerPaymentsTools(server: McpServer, auth: Auth | null): voi
   );
 
   server.tool("onchainos_payment_submit",
-    "链上-支付 | 提交 EIP-3009 签名凭证",
+    "链上-支付 | 提交 EIP-3009 签名凭证【场景:买家签名付款/提交支付凭证】",
     {
       paymentId: z.string().describe("付款ID"),
       authorization: z.string().describe("EIP-3009 授权 JSON。格式: {\"type\":\"eip-3009\",\"from\":\"0x买家地址\",\"to\":\"0x卖家地址\",\"value\":\"100000\",\"validAfter\":\"0\",\"validBefore\":\"1714521600\",\"nonce\":\"0x...\"}。value 必须与 challenge 中 amount 一致"),
@@ -84,7 +84,7 @@ export function registerPaymentsTools(server: McpServer, auth: Auth | null): voi
   );
 
   server.tool("onchainos_payment_status",
-    "链上-支付 | 查询支付状态",
+    "链上-支付 | 查询支付状态【场景:查支付是否到账/结算状态】",
     {
       paymentId: z.string().describe("付款ID"),
     },
@@ -97,7 +97,7 @@ export function registerPaymentsTools(server: McpServer, auth: Auth | null): voi
   // ── HTTP 端基础设施 ───────────────────────────────────
 
   server.tool("onchainos_payment_supported",
-    "链上-支付 | 获取支付支持的网络/代币列表",
+    "链上-支付 | 获取支付支持的网络/代币列表【场景:查支付支持哪些链和代币】",
     {},
     { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async () => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await paymentsApi.supported(auth)); } catch(e) { return toError(e); } },

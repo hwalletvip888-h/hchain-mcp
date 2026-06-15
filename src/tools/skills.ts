@@ -64,12 +64,16 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
   // ── 1. 交易全链路 ──────────────────────────────────────
 
   server.tool("onchainos_skill_trade_pipeline",
-    "链上-Skill | 全自动交易管线: 报价→授权→构建→模拟",
+    "链上-Skill | 全自动交易管线: 报价→授权→构建→模拟。📋 Agent 调用场景: 用户说'帮我买/卖 X 换成 Y'/'做个兑换'/'swap'/'交易'。一步完成报价→授权→构建→模拟, 最后返回 calldata 待用户签名后广播",
     {
-      chainIndex: z.string().describe("链索引。如 '1'=ETH '501'=Solana '8453'=Base。从 onchainos_dex_supported_chain 获取"),
-      fromTokenAddress: z.string().describe("卖出代币合约地址。主链币传空字符串''或'0xEeeeEeeeEeeeEeeeEeeeEeeeEeeeEeeeEeeeEEeE'"),
-      toTokenAddress: z.string().describe("买入代币合约地址"),
-      amount: z.string().describe("卖出数量(最小单位,含精度)。如 1 USDT=1000000, 1 SOL=1000000000"),
+      chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana。⚠️ 不确定先调 onchainos_dex_supported_chain 获取可用链列表"),
+      fromTokenAddress: z.string().describe("卖出代币合约地址(小写)。主链币传空字符串''。⚠️ 不知道地址 → 先调 onchainos_token_search 搜索代币"),
+      toTokenAddress: z.string().describe("买入代币合约地址(小写)。⚠️ 不知道地址 → 先调 onchainos_token_search 搜索代币"),
+      amount: z.string().describe(
+        "卖出数量(最小单位, 含精度 decimals)。" +
+        "⚠️ 不同代币精度不同: USDT(decimals=6)'1'=1000000, SOL(decimals=9)'1'=1000000000, ETH(decimals=18)'1'=1000000000000000000。" +
+        "公式: amount = 人类可读数量 × 10^decimals。不确定 decimals 先调 onchainos_token_basic_info"
+      ),
       userWalletAddress: z.string().describe("用户钱包地址"),
       slippagePercent: z.string().optional().default("1.0").describe("滑点百分比, 默认1.0。建议从 onchainos_skill_smart_slippage 获取"),
       gasLevel: z.enum(["slow","average","fast"]).optional().describe("Gas等级, 默认average"),
@@ -170,9 +174,9 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
   // ── 2. 风险检测链 ──────────────────────────────────────
 
   server.tool("onchainos_skill_risk_detect",
-    "链上-Skill | 综合风险检测: 安全+集中度+打包+开发者, 输出0-100评分",
+    "链上-Skill | 综合风险检测: 安全+集中度+打包+开发者, 输出0-100评分。📋 Agent 调用场景: 用户说'这个币安全吗'/'查一下貔貅'/'有没有rug风险'/'代币风险评估'/'敢不敢买'。并行调用4个API综合打分, LOW=安全 MEDIUM=谨慎 HIGH=强烈不建议 CRITICAL=禁止交易",
     {
-      chainIndex: z.string().describe("链索引。如 '501'=Solana '1'=ETH '8453'=Base"),
+      chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana。⚠️ 不确定先调 onchainos_dex_supported_chain"),
       tokenContractAddress: z.string().describe("代币合约地址。从 onchainos_token_search 获取"),
     },
     { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
@@ -271,12 +275,16 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
   // ── 3. 智能滑点推荐 ────────────────────────────────────
 
   server.tool("onchainos_skill_smart_slippage",
-    "链上-Skill | 基于波动率和价格影响智能推荐滑点",
+    "链上-Skill | 基于波动率和价格影响智能推荐滑点。📋 Agent 调用场景: 用户说'滑点设多少合适'/'帮我推荐滑点'/'建议滑点'。基于历史K线波动率(CV)+当前报价价格影响, 返回推荐/保守/激进三档滑点值",
     {
-      chainIndex: z.string().describe("链索引。如 '501'=Solana '1'=ETH"),
-      fromTokenAddress: z.string().describe("卖出代币合约地址"),
-      toTokenAddress: z.string().describe("买入代币合约地址"),
-      amount: z.string().optional().describe("交易数量(最小单位)。填了会调 quote 评估价格影响, 不填仅用波动率估算"),
+      chainIndex: z.string().describe("链ID(字符串)。如 '1'=ETH '501'=Solana。⚠️ 不确定先调 onchainos_dex_supported_chain"),
+      fromTokenAddress: z.string().describe("卖出代币合约地址(小写)。⚠️ 不知道地址 → 先调 onchainos_token_search 搜索。主链币传 ''"),
+      toTokenAddress: z.string().describe("买入代币合约地址(小写)。⚠️ 不知道地址 → 先调 onchainos_token_search 搜索"),
+      amount: z.string().optional().describe(
+        "交易数量(最小单位, 含精度 decimals)。" +
+        "填了会调 quote 评估价格影响, 不填仅用波动率估算。" +
+        "⚠️ 精度说明: USDT(decimals=6)'1'=1000000, SOL(decimals=9)'1'=1000000000。公式: amount = 人类可读数量 × 10^decimals"
+      ),
     },
     { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async ({ chainIndex, fromTokenAddress, toTokenAddress, amount }) => {
@@ -373,9 +381,9 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
   // ── 4. 信号聚合 ────────────────────────────────────────
 
   server.tool("onchainos_skill_signal_aggregate",
-    "链上-Skill | 信号聚合: 获取买入信号+风险过滤+安全评级",
+    "链上-Skill | 信号聚合: 获取买入信号+风险过滤+安全评级。📋 Agent 调用场景: 用户说'聪明钱在买什么'/'有什么信号'/'跟单信号'/'看看KOL买了什么'。自动拉取信号→批量查风险→过滤高风险代币→返回安全信号列表",
     {
-      chainIndex: z.string().describe("链索引。如 '1'=ETH '501'=Solana。从 onchainos_signal_supported_chain 获取"),
+      chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '501'=Solana。⚠️ 不确定先调 onchainos_signal_supported_chain 获取可用链"),
       walletType: z.string().optional().describe("钱包类型: '1'=聪明钱 '2'=KOL '3'=鲸鱼, 逗号分隔。不传不过滤"),
       minAmountUsd: z.string().optional().describe("最小交易金额(USD)。如 '1000'=只返回>$1000的信号"),
       maxAmountUsd: z.string().optional().describe("最大交易金额(USD)"),
@@ -481,6 +489,72 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
         nextSteps: enriched.length > 0
           ? [{ action: "深入分析特定代币", tool: "onchainos_skill_risk_detect", params: { chainIndex: enriched[0]?.chainIndex, tokenContractAddress: "{{选中代币地址}}" } }]
           : [{ action: "无安全信号, 放宽条件或检查其他链", tool: "onchainos_signal_list" }],
+      });
+    },
+  );
+
+  // ── 5. 市场全景速览 ───────────────────────────────────
+
+  server.tool("onchainos_skill_market_overview",
+    "链上-Skill | 市场全景速览: 价格+K线+情绪+安全, 一站式快速了解代币。📋 Agent 调用场景: 用户说'看看这个币怎么样'/'了解这个代币'/'全面分析'/'查一下行情+K线+安全'",
+    {
+      chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana。⚠️ 不确定先调 onchainos_market_supported_chain"),
+      tokenContractAddress: z.string().describe("代币合约地址(小写)。主链币传空字符串"),
+      tokenSymbol: z.string().optional().describe("代币符号(如 'ETH' 'SOL'), 用于查情绪和新闻。不传则跳过社媒分析"),
+    },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async ({ chainIndex, tokenContractAddress, tokenSymbol }) => {
+      if (!auth) return AUTH_REQUIRED("READ");
+      const steps: StepResult[] = [];
+      const warnings: string[] = [];
+
+      // Step 1: 价格
+      try {
+        const price = await marketApi.price(auth, [{ chainIndex, tokenContractAddress }]);
+        steps.push({ step: "price", status: "ok", data: price });
+      } catch (e) {
+        steps.push({ step: "price", status: "error", error: e instanceof Error ? e.message : String(e) });
+        warnings.push("价格查询失败");
+      }
+
+      // Step 2: K线(24h 1H bars)
+      try {
+        const candles = await marketApi.candles(auth, { chainIndex, tokenContractAddress, bar: "1H", limit: "24" });
+        steps.push({ step: "candles_24h", status: "ok", data: { barCount: Array.isArray(candles) ? candles.length : 0 } });
+      } catch (e) {
+        steps.push({ step: "candles_24h", status: "error", error: e instanceof Error ? e.message : String(e) });
+      }
+
+      // Step 3: 安全分析
+      try {
+        const security = await marketApi.tokenAdvancedInfo(auth, chainIndex, tokenContractAddress);
+        steps.push({ step: "security", status: "ok", data: { riskLevel: (security as any)?.riskLevel, isHoneypot: (security as any)?.isHoneypot } });
+      } catch (e) {
+        steps.push({ step: "security", status: "error", error: e instanceof Error ? e.message : String(e) });
+      }
+
+      // Step 4: 社媒情绪(有 symbol 时)
+      if (tokenSymbol) {
+        try {
+          const sentiment = await marketApi.socialSentimentSymbol(auth, { tokenSymbols: tokenSymbol.toUpperCase(), timeFrame: "3" });
+          steps.push({ step: "sentiment", status: "ok", data: sentiment });
+        } catch (e) {
+          steps.push({ step: "sentiment", status: "error", error: e instanceof Error ? e.message : String(e) });
+        }
+      } else {
+        steps.push({ step: "sentiment", status: "skipped", warning: "未提供 tokenSymbol, 跳过社媒情绪" });
+      }
+
+      const okCount = steps.filter(s => s.status === "ok" || s.status === "skipped").length;
+      return toResult({
+        steps,
+        summary: { totalDimensions: steps.length, available: okCount, failed: steps.length - okCount },
+      }, {
+        warnings: warnings.length ? warnings : undefined,
+        nextSteps: [
+          { action: "详细风险评估", tool: "onchainos_skill_risk_detect", params: { chainIndex, tokenContractAddress } },
+          { action: "如需交易", tool: "onchainos_skill_trade_pipeline" },
+        ],
       });
     },
   );

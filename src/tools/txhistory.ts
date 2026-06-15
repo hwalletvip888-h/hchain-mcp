@@ -11,17 +11,17 @@ import type { Auth } from "../adapters/shared.js";
 export function registerTxHistoryTools(server: McpServer, auth: Auth | null): void {
 
   server.tool("onchainos_tx_history_supported_chain",
-    "链上-账户 | 获取交易历史 API 支持的链列表",
+    "链上-账户 | 获取交易历史 API 支持的链列表【场景:查哪些链支持查交易历史】",
     {},
     { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async () => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await postTxApi.supportedChain(auth)); } catch(e) { return toError(e); } },
   );
 
   server.tool("onchainos_transaction_history",
-    "链上-账户 | 查询地址 6 个月内交易历史",
+    "链上-账户 | 查询地址 6 个月内交易历史【场景:查钱包交易记录/近期交易】",
     {
       address: z.string().describe("钱包地址"),
-      chains: z.string().describe("链索引, 逗号分隔, 最多50个。如 '1'=ETH '56'=BSC。从 onchainos_tx_history_supported_chain 获取"),
+      chains: z.string().describe("链ID,逗号分隔最多50个。如 '1,56,501,8453'。⚠️ 不确定钱包在哪些链 → 传 '1,56,501,8453,42161,137,196' 盲查"),
       tokenContractAddress: z.string().optional().describe("代币合约地址筛选。不传=查所有代币+主链币, 传空字符串=只查主链币, 传具体地址=查该代币"),
       begin: z.string().optional().describe("开始时间, Unix毫秒时间戳。如 '1700000000000'"),
       end: z.string().optional().describe("结束时间, Unix毫秒时间戳"),
@@ -31,14 +31,20 @@ export function registerTxHistoryTools(server: McpServer, auth: Auth | null): vo
     { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async ({ address, chains, tokenContractAddress, begin, end, cursor, limit }) => {
       if(!auth) return AUTH_REQUIRED("READ");
-      try { return toResult(await postTxApi.transactions(auth, address, chains, tokenContractAddress, begin, end, cursor, limit)); } catch(e) { return toError(e); }
+      try {
+        return toResult(await postTxApi.transactions(auth, address, chains, tokenContractAddress, begin, end, cursor, limit), {
+          nextSteps: [
+            { action: "查看某笔交易的详细信息", tool: "onchainos_transaction_detail", condition: "从返回列表中取 txHash 和 chainIndex" },
+          ],
+        });
+      } catch(e) { return toError(e); }
     },
   );
 
   server.tool("onchainos_transaction_detail",
-    "链上-账户 | 根据 txHash 查询单笔交易详情",
+    "链上-账户 | 根据 txHash 查询单笔交易详情【场景:查某笔交易的具体信息】",
     {
-      chainIndex: z.string().describe("链索引(字符串)。如 '1'=ETH '42161'=Arbitrum"),
+      chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '42161'=Arbitrum '8453'=Base"),
       txHash: z.string().describe("交易哈希。从 onchainos_transaction_history 返回值或广播返回获取"),
       itype: z.enum(["0","1","2"]).optional().describe("交易层级: '0'=外层主链币转移 '1'=合约内层主链币转移 '2'=token转移。不传查所有"),
     },

@@ -11,20 +11,20 @@ import type { Auth } from "../adapters/shared.js";
 export function registerIntentTools(server: McpServer, auth: Auth | null): void {
 
   server.tool("onchainos_intent_create_order",
-    "链上-Swap | 创建意图订单，提交 EIP-712 签名订单",
+    "链上-Swap | 创建意图订单，提交 EIP-712 签名订单【场景:提交意图兑换订单】",
     {
-      chainIndex: z.string().describe("链索引。仅支持 ETH(1)/BSC(56)/Arbitrum(42161)/Base(8453)"),
+      chainIndex: z.string().describe("链ID(字符串)。此工具仅支持: '1'=ETH '56'=BSC '42161'=Arbitrum '8453'=Base"),
       fromTokenAddress: z.string().describe("卖出代币地址。须与 quote 的 signData.message.fromTokenAddress 一致"),
       toTokenAddress: z.string().describe("买入代币地址。须与 quote 的 signData.message.toTokenAddress 一致"),
-      fromTokenAmount: z.string().describe("卖出数量(最小单位)。须与 quote 的 signData.message.fromTokenAmount 一致"),
-      toTokenAmount: z.string().describe("最小买入数量(最小单位)。由 quote 的 signData.message.toTokenAmount 结合滑点计算"),
+      fromTokenAmount: z.string().describe("卖出数量(最小单位, 含精度 decimals)。须与 quote 的 signData.message.fromTokenAmount 一致。⚠️ 精度说明见 onchainos_token_basic_info"),
+      toTokenAmount: z.string().describe("最小买入数量(最小单位, 含精度 decimals)。由 quote 的 signData.message.toTokenAmount 结合滑点计算。⚠️ 精度说明见 onchainos_token_basic_info"),
       userWalletAddress: z.string().describe("下单钱包地址。须与 quote 的 signData.message.owner 一致"),
       validTo: z.number().int().describe("订单过期Unix时间戳(秒)。须与 quote 的 signData.message.validTo 一致"),
       quoteId: z.string().describe("报价ID。从 quote(mode=intent) 返回值获取"),
       appData: z.string().describe("应用数据(bytes32)。须与 quote 的 signData.message.appData 一致"),
       signature: z.string().describe("用户私钥对 quote 返回的 signData 进行 EIP-712 签名的结果"),
       swapReceiverAddress: z.string().optional().describe("接收代币的地址, 默认=userWalletAddress"),
-      commissionInfos: z.string().optional().describe("分佣列表 JSON 数组。须与 quote 的 signData.message.commissionInfos 一致"),
+      commissionInfos: z.array(z.record(z.unknown())).optional().describe("分佣列表。须与 quote(mode=intent) 返回的 signData.message.commissionInfos 保持一致。每个元素包含分佣地址和比例"),
     },
     { readOnlyHint: false, idempotentHint: false, destructiveHint: true },
     async ({ chainIndex, fromTokenAddress, toTokenAddress, fromTokenAmount, toTokenAmount, userWalletAddress, validTo, quoteId, appData, signature, swapReceiverAddress, commissionInfos }) => {
@@ -32,7 +32,7 @@ export function registerIntentTools(server: McpServer, auth: Auth | null): void 
       try {
         const body: Record<string, unknown> = { chainIndex, fromTokenAddress, toTokenAddress, fromTokenAmount, toTokenAmount, userWalletAddress, validTo, quoteId, appData, signature };
         if (swapReceiverAddress) body.swapReceiverAddress = swapReceiverAddress;
-        if (commissionInfos) { try { body.commissionInfos = JSON.parse(commissionInfos); } catch { return toError(new Error("commissionInfos 格式错误")); } }
+        if (commissionInfos) body.commissionInfos = commissionInfos;
         return toResult(await intentApi.createOrder(auth, body), {
           nextSteps: [
             { action: "查订单状态", tool: "onchainos_intent_order_status", params: { orderUid: "{{返回的 orderUid}}" } },
@@ -43,7 +43,7 @@ export function registerIntentTools(server: McpServer, auth: Auth | null): void 
   );
 
   server.tool("onchainos_intent_order_list",
-    "链上-Swap | 查询意图订单历史，支持游标分页",
+    "链上-Swap | 查询意图订单历史，支持游标分页【场景:查意图订单列表/历史】",
     {
       userWalletAddress: z.string().optional().describe("下单钱包地址。与 orderUid 二选一必填"),
       orderUid: z.string().optional().describe("订单ID。与 userWalletAddress 二选一必填"),
@@ -59,14 +59,14 @@ export function registerIntentTools(server: McpServer, auth: Auth | null): void 
   );
 
   server.tool("onchainos_intent_order_status",
-    "链上-Swap | 查询意图订单当前状态",
+    "链上-Swap | 查询意图订单当前状态【场景:查意图订单是否成交】",
     { orderUid: z.string().describe("订单ID。从 onchainos_intent_create_order 返回值获取") },
     { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async ({ orderUid }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await intentApi.orderStatus(auth, orderUid)); } catch(e) { return toError(e); } },
   );
 
   server.tool("onchainos_intent_cancel_sign_data",
-    "链上-Swap | 获取取消意图订单的 EIP-712 签名数据",
+    "链上-Swap | 获取取消意图订单的 EIP-712 签名数据【场景:准备取消订单的签名】",
     {
       userWalletAddress: z.string().describe("下单者钱包地址"),
       orderUid: z.string().describe("要取消的订单ID"),
@@ -76,7 +76,7 @@ export function registerIntentTools(server: McpServer, auth: Auth | null): void 
   );
 
   server.tool("onchainos_intent_cancel_order",
-    "链上-Swap | 取消意图订单",
+    "链上-Swap | 取消意图订单【场景:取消还没成交的意图订单】",
     {
       userWalletAddress: z.string().describe("下单者钱包地址"),
       orderUid: z.string().describe("要取消的订单ID"),
@@ -90,7 +90,7 @@ export function registerIntentTools(server: McpServer, auth: Auth | null): void 
   );
 
   server.tool("onchainos_intent_auction_info",
-    "链上-Swap | 查询意图拍卖详情，含 Solver 竞价方案",
+    "链上-Swap | 查询意图拍卖详情，含 Solver 竞价方案【场景:查意图拍卖结果/Solver方案】",
     {
       auctionId: z.string().optional().describe("拍卖ID。与 txHash 二选一必填"),
       txHash: z.string().optional().describe("上链交易哈希。与 auctionId 二选一必填"),

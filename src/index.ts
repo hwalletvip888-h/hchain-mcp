@@ -20,6 +20,7 @@ import { registerIntentTools } from "./tools/intent.js";
 import { registerMarketTools } from "./tools/market.js";
 import { registerWsTools } from "./tools/ws.js";
 import { registerSkillTools } from "./tools/skills.js";
+import { registerHelpTools } from "./tools/help.js";
 
 const { version } = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf-8"),
@@ -54,6 +55,7 @@ async function main() {
   registerMarketTools(server, auth);
   registerWsTools(server, auth);
   registerSkillTools(server, auth);
+  registerHelpTools(server, auth);
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
