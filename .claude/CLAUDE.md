@@ -1,6 +1,6 @@
 # hchain-mcp — Agent 操作指南
 
-> 版本 2.0 · 专属 Agent 的链上全功能 MCP · 102 tools 覆盖 OKX OnchainOS
+> 版本 2.1 · 专属 Agent 的链上全功能 MCP · 103 tools 覆盖 OKX OnchainOS
 
 ---
 
@@ -47,6 +47,7 @@
 |--------|--------|
 | "帮我买/卖/兑换 X 到 Y" | `onchainos_skill_trade_pipeline` — **全自动交易管线** |
 | "跨链兑换/把A链的X换成B链的Y" | `onchainos_skill_crosschain_swap` — **跨链原子交换** |
+| "帮我挂个限价单/止损/到XX价格买卖" | `onchainos_skill_conditional_order` — **条件订单(限价/止损)** |
 | "查报价" | `onchainos_dex_quote` — 最优兑换报价 |
 | "建议滑点设多少" | `onchainos_skill_smart_slippage` — 智能滑点推荐 |
 | "查兑换状态" | `onchainos_dex_swap_history` / `onchainos_gateway_orders` |

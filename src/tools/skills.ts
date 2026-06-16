@@ -730,4 +730,195 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
     },
   );
 
+  // ── 7. 条件订单: 限价/止损 ─────────────────────────────
+
+  server.tool("onchainos_skill_conditional_order",
+    "链上-Skill | 条件订单: 限价买入/卖出 + 止损卖出。📋 Agent 调用场景: 用户说'当ETH到2000的时候帮我买入'/'帮我设置一个止损'/'帮我挂一个限价单'/'到X价格帮我买/卖'。先查当前价对比触发条件, 已满足则立即执行; 未满足则返回价格偏离度 + WS实时监控指引",
+    {
+      chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '501'=Solana '8453'=Base。⚠️ 不确定先调 onchainos_dex_supported_chain"),
+      fromTokenAddress: z.string().describe("卖出代币合约地址(小写)。⚠️ 不知道地址→先调 onchainos_token_search 搜索。主链币传空字符串"),
+      toTokenAddress: z.string().describe("买入代币合约地址(小写)。⚠️ 不知道地址→先调 onchainos_token_search 搜索。主链币传空字符串"),
+      amount: z.string().describe(
+        "卖出数量(最小单位, 含精度 decimals)。" +
+        "⚠️ 不同代币精度不同: USDT(decimals=6) '1'=1000000, ETH(decimals=18) '1'=1000000000000000000。" +
+        "公式: amount = 人类可读数量 × 10^decimals。不确定 decimals 先调 onchainos_token_basic_info"
+      ),
+      triggerPrice: z.string().describe("触发价格(USD, 人类可读)。如 '0.5'=0.5USD。系统会自动对比当前价格判断是否触发"),
+      orderType: z.enum(["limit_buy", "limit_sell", "stop_loss"]).describe(
+        "订单类型: limit_buy=低于此价买入(当前价≤触发价时执行); " +
+        "limit_sell=高于此价卖出(当前价≥触发价时执行); " +
+        "stop_loss=跌破止损卖出(当前价≤触发价时执行)"
+      ),
+      userWalletAddress: z.string().describe("用户钱包地址"),
+      slippagePercent: z.string().optional().default("1.0").describe("滑点百分比, 默认1.0。建议从 onchainos_skill_smart_slippage 获取"),
+    },
+    { readOnlyHint: false, idempotentHint: false, destructiveHint: true },
+    async (params) => {
+      if (!auth) return AUTH_REQUIRED("TRADE");
+      const steps: StepResult[] = [];
+      const warnings: string[] = [];
+      const { chainIndex, fromTokenAddress, toTokenAddress, amount, triggerPrice, orderType, userWalletAddress, slippagePercent = "1.0" } = params;
+      const targetPrice = parseFloat(triggerPrice);
+      if (isNaN(targetPrice) || targetPrice <= 0) return toError(new Error("triggerPrice 必须是大于0的数字"));
+
+      // ── Step 1: 获取当前价格 ─────────────────────────────
+      let currentPrice = 0;
+      try {
+        const priceRaw = await marketApi.price(auth, [{ chainIndex, tokenContractAddress: fromTokenAddress }]);
+        const priceList = Array.isArray(priceRaw) ? priceRaw : [priceRaw];
+        const first = priceList[0] as any;
+        currentPrice = parseFloat(first?.usdPrice ?? first?.price ?? first?.usd ?? "0");
+        if (!currentPrice || currentPrice <= 0) {
+          // fallback: 试试 toToken 的价格
+          const priceRaw2 = await marketApi.price(auth, [{ chainIndex, tokenContractAddress: toTokenAddress }]);
+          const p2 = Array.isArray(priceRaw2) ? priceRaw2[0] : priceRaw2;
+          currentPrice = parseFloat((p2 as any)?.usdPrice ?? (p2 as any)?.price ?? "0");
+        }
+        steps.push({ step: "current_price", status: "ok", data: { usdPrice: currentPrice, triggerPrice: targetPrice } });
+      } catch (e) {
+        steps.push({ step: "current_price", status: "error", error: e instanceof Error ? e.message : String(e) });
+        return toResult({ steps, summary: { status: "failed", failedAt: "price_check", reason: "价格查询失败, 无法判断触发条件" } });
+      }
+
+      // ── Step 2: 判断触发条件 ─────────────────────────────
+      const deviations: string[] = [];
+      let triggered = false;
+      const deviationPercent = ((currentPrice - targetPrice) / targetPrice) * 100;
+
+      if (orderType === "limit_buy") {
+        triggered = currentPrice <= targetPrice;
+        if (!triggered) deviations.push(`当前价 $${currentPrice} 比目标价 $${targetPrice} 高 ${deviationPercent.toFixed(2)}%, 尚未到买入区`);
+        else deviations.push(`✓ 当前价 $${currentPrice} 已 ≤ 目标价 $${targetPrice}, 触发买入`);
+      } else if (orderType === "limit_sell") {
+        triggered = currentPrice >= targetPrice;
+        if (!triggered) deviations.push(`当前价 $${currentPrice} 比目标价 $${targetPrice} 低 ${Math.abs(deviationPercent).toFixed(2)}%, 尚未到卖出区`);
+        else deviations.push(`✓ 当前价 $${currentPrice} 已 ≥ 目标价 $${targetPrice}, 触发卖出`);
+      } else if (orderType === "stop_loss") {
+        triggered = currentPrice <= targetPrice;
+        if (!triggered) deviations.push(`当前价 $${currentPrice} 比止损价 $${targetPrice} 高 ${deviationPercent.toFixed(2)}%, 未触发止损`);
+        else deviations.push(`⚠ 当前价 $${currentPrice} 已 ≤ 止损价 $${targetPrice}, 触发止损卖出`);
+      }
+
+      steps.push({
+        step: "condition_check",
+        status: triggered ? ("ok" as const) : ("skipped" as const),
+        data: { orderType, currentPrice, targetPrice, deviationPercent: +deviationPercent.toFixed(2), triggered },
+      });
+
+      // ── 不触发 → 返回监控指引 ──────────────────────────
+      if (!triggered) {
+        return toResult({
+          steps,
+          orderInfo: {
+            orderType, currentPrice, targetPrice,
+            deviationPercent: +deviationPercent.toFixed(2),
+            status: "pending",
+            message: `尚未触发, 偏离 ${Math.abs(deviationPercent).toFixed(2)}%`,
+          },
+          summary: {
+            status: "pending",
+            message: deviations[0],
+            monitoringOptions: [
+              { method: "WS 实时监控(推荐)", detail: `订阅 price 频道实时监控 ${fromTokenAddress} 的价格变动` },
+              { method: "轮询检查", detail: "定期调用 onchainos_market_price 查询最新价" },
+            ],
+          },
+        }, {
+          nextSteps: [
+            { action: "订阅WS价格频道实时监控", tool: "onchainos_ws_subscribe", params: { channel: "price", chainIndex, tokenContractAddress: fromTokenAddress } },
+            { action: "或手动查价判断", tool: "onchainos_market_price" },
+          ],
+        });
+      }
+
+      // ── Step 3: 条件触发 → 执行交易 ────────────────────
+      // 先报价
+      try {
+        const qParams: Record<string, string> = {
+          chainIndex, fromTokenAddress, toTokenAddress, amount,
+          swapMode: "exactIn",
+        };
+        const quoteR = await tradeApi.quote(auth, qParams);
+        steps.push({ step: "quote", status: "ok", data: { priceImpactPercent: (quoteR as any)?.priceImpactPercent } });
+      } catch (e) {
+        steps.push({ step: "quote", status: "error", error: e instanceof Error ? e.message : String(e) });
+        return toResult({ steps, summary: { status: "failed", failedAt: "quote", reason: "报价失败, 无法执行条件单" } }, { warnings });
+      }
+
+      // Approve (if needed)
+      const needApprove = !isNative(fromTokenAddress);
+      if (needApprove) {
+        try {
+          await tradeApi.approveTransaction(auth, chainIndex, fromTokenAddress, amount);
+          steps.push({ step: "approve", status: "ok", data: { tokenContractAddress: fromTokenAddress } });
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          steps.push({ step: "approve", status: "error", error: msg });
+          warnings.push(`授权失败, 跳过继续: ${msg}`);
+        }
+      } else {
+        steps.push({ step: "approve", status: "skipped", warning: "主链币无需授权" });
+      }
+
+      // Build swap
+      let swapRaw: any;
+      try {
+        const sParams: Record<string, string> = {
+          chainIndex, fromTokenAddress, toTokenAddress, amount,
+          userWalletAddress, slippagePercent,
+        };
+        if (needApprove) {
+          sParams.approveTransaction = "true";
+          sParams.approveAmount = amount;
+        }
+        swapRaw = await tradeApi.swap(auth, sParams);
+        const tx = extractTxFields(swapRaw);
+        steps.push({ step: "swap", status: "ok", data: { to: tx.to, dataLen: tx.data?.length ?? 0, value: tx.value } });
+      } catch (e) {
+        steps.push({ step: "swap", status: "error", error: e instanceof Error ? e.message : String(e) });
+        return toResult({ steps, summary: { status: "failed", failedAt: "swap", reason: "构建交易失败" } }, { warnings });
+      }
+
+      // Simulate
+      const swapTx = extractTxFields(swapRaw);
+      try {
+        await gatewayApi.simulate(auth, {
+          fromAddress: userWalletAddress,
+          toAddress: swapTx.to,
+          chainIndex,
+          txAmount: swapTx.value,
+          extJson: { inputData: swapTx.data },
+        });
+        steps.push({ step: "simulate", status: "ok", data: { success: true } });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        steps.push({ step: "simulate", status: "error", error: msg });
+        warnings.push(`模拟执行失败: ${msg}`);
+      }
+
+      return toResult({
+        steps,
+        orderInfo: {
+          orderType,
+          triggerPrice: targetPrice,
+          executedAtPrice: currentPrice,
+          status: "triggered",
+        },
+        calldata: { to: swapTx.to, data: swapTx.data, value: swapTx.value, gasPrice: swapTx.gasPrice, gas: swapTx.gas },
+        signatureData: (swapRaw as any)?.signatureData,
+        summary: {
+          status: "triggered",
+          message: `条件已触发! 当前价 $${currentPrice} 满足 ${orderType} 条件, 交易已构建`,
+        },
+      }, {
+        warnings: warnings.length ? warnings : undefined,
+        nextSteps: [
+          { action: "如有 signatureData 先执行授权", tool: "onchainos_gateway_broadcast", condition: "swapRaw.signatureData 存在时" },
+          { action: "签名后广播交易", tool: "onchainos_gateway_broadcast", params: { chainIndex, address: userWalletAddress } },
+          { action: "查交易状态", tool: "onchainos_gateway_orders", params: { chainIndex } },
+        ],
+      });
+    },
+  );
+
 }
