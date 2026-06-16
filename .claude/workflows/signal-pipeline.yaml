@@ -1,0 +1,152 @@
+# hchain 信号→交易流水线
+# 使用: /workflow signal-pipeline '{"chains":["1","56"],"min_strength":"medium","auto_trade":false,"max_per_token_usd":1000}'
+
+name: signal-pipeline
+version: "1.0"
+description: 信号聚合→批量风控→高风险过滤→可选自动交易
+timeout_seconds: 600
+max_continuations: 2
+
+nodes:
+  # ===== 阶段 1: 多链信号聚合 (并行) =====
+  - id: signals-eth
+    agent: signal-scout
+    label: ETH链信号
+    action: signal_aggregate
+    params:
+      chain: "1"
+    parallel: true
+    depends_on: []
+    timeout: 60
+
+  - id: signals-bsc
+    agent: signal-scout
+    label: BSC链信号
+    action: signal_aggregate
+    params:
+      chain: "56"
+    parallel: true
+    depends_on: []
+    timeout: 60
+
+  - id: signals-sol
+    agent: signal-scout
+    label: Solana链信号
+    action: signal_aggregate
+    params:
+      chain: "501"
+    parallel: true
+    depends_on: []
+    timeout: 60
+
+  - id: smart-money-rank
+    agent: signal-scout
+    label: 聪明钱排行
+    action: leaderboard
+    parallel: true
+    depends_on: []
+    timeout: 30
+
+  # ===== 阶段 2: 信号合并去重 =====
+  - id: merge-signals
+    agent: orchestrator
+    label: 合并去重
+    action: merge_dedup
+    params:
+      sources: [signals-eth, signals-bsc, signals-sol]
+      min_strength: "{{args.min_strength}}"
+      max_results: 20
+    depends_on: [signals-eth, signals-bsc, signals-sol, smart-money-rank]
+    timeout: 20
+    output:
+      unique_tokens: "list deduped by token address"
+      signal_count: "total before dedup"
+
+  # ===== 阶段 3: 批量风险过滤 (并行) =====
+  - id: batch-risk-filter
+    agent: risk-assessor
+    label: 批量风险过滤
+    action: batch_scan
+    params:
+      tokens: "{{merge-signals.unique_tokens}}"
+      max_parallel: 5
+      quick_mode: true
+    depends_on: [merge-signals]
+    timeout: 180
+    validate:
+      - field: scanned_count
+        rule: "> 0"
+    gate:
+      condition: "per_token.total_score < 71"
+      on_fail_per_token: "DROP_FROM_LIST"
+
+  # ===== 阶段 4: 输出可交易列表 =====
+  - id: tradable-list
+    agent: orchestrator
+    label: 可交易列表
+    action: generate_report
+    params:
+      signals: "{{merge-signals}}"
+      risk_filter: "{{batch-risk-filter}}"
+      smart_money: "{{smart-money-rank}}"
+    depends_on: [batch-risk-filter]
+    timeout: 20
+    output_template: |
+      # 📡 hchain 信号扫描报告
+
+      ## 🧠 聪明钱动向
+      {{#each smart-money-rank.top5}}
+      - {{rank}}. {{name}} — {{action}} {{token_symbol}}
+      {{/each}}
+
+      ## 🔍 信号汇总 ({{merge-signals.signal_count}} → {{tradable_count}} 安全)
+
+      | # | 代币 | 链 | 信号强度 | 风险评分 | 聪明钱 | 操作 |
+      |:---:|------|------|:---:|:---:|:---:|------|
+      {{#each tradable}}
+      | {{index}} | {{symbol}} | {{chain}} | {{strength}} | {{risk_score}} | {{smart_money_action}} | {{recommendation}} |
+      {{/each}}
+
+      ## 🚫 已过滤 (高风险)
+      {{#each filtered_out}}
+      - ❌ {{symbol}}: 风险评分 {{risk_score}} — {{reject_reason}}
+      {{/each}}
+
+      ## 💡 Top 3 推荐
+      {{#each top3}}
+      ### {{rank}}. {{symbol}} ({{chain}})
+      - 信号强度: {{strength}}
+      - 风险评分: {{risk_score}}/100
+      - 当前价: ${{price}}
+      - 建议操作: {{recommendation}}
+      - 建议金额: ${{suggested_amount}}
+      {{/each}}
+
+  # ===== 阶段 5: 可选自动交易 =====
+  - id: auto-trade-gate
+    agent: orchestrator
+    label: 自动交易门禁
+    action: evaluate
+    params:
+      auto_trade: "{{args.auto_trade}}"
+      top3: "{{tradable-list.top3}}"
+    depends_on: [tradable-list]
+    gate:
+      condition: "args.auto_trade == true AND top3.length > 0"
+      on_pass: "CONTINUE_TO_TRADE"
+      on_fail: "STOP_HERE"
+    timeout: 10
+
+  - id: execute-top-trades
+    agent: trade-executor
+    label: 执行推荐交易
+    action: batch_swap
+    params:
+      trades: "{{tradable-list.top3}}"
+      max_per_token_usd: "{{args.max_per_token_usd}}"
+    depends_on: [auto-trade-gate]
+    run_on: success
+    timeout: 300
+    human_in_the_loop: true
+    fallback:
+      on_human_reject: "skip"

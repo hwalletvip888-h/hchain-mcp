@@ -14,7 +14,7 @@ import {
   intentApi,
   postTxApi,
 } from "../adapters/onchainos.js";
-import { toResult, toError, AUTH_REQUIRED } from "../adapters/shared.js";
+import { toResult, toError, AUTH_REQUIRED, errMsg } from "../adapters/shared.js";
 import type { Auth, NextStep } from "../adapters/shared.js";
 
 // ── 常量 ────────────────────────────────────────────────────
@@ -98,7 +98,7 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
         const quoteR = await tradeApi.quote(auth, qParams);
         steps.push({ step: "quote", status: "ok", data: { priceImpactPercent: (quoteR as any).priceImpactPercent, estimateGasFee: (quoteR as any).estimateGasFee } });
       } catch (e) {
-        steps.push({ step: "quote", status: "error", error: e instanceof Error ? e.message : String(e) });
+        steps.push({ step: "quote", status: "error", error: errMsg(e) });
         return toResult({ steps, summary: { status: "failed", failedAt: "quote", reason: "报价失败, 无法继续" } }, { warnings });
       }
 
@@ -111,7 +111,7 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
           steps.push({ step: "approve", status: "ok", data: { tokenContractAddress: fromTokenAddress, approveAmount: amount } });
           approveOk = true;
         } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
+          const msg = errMsg(e);
           steps.push({ step: "approve", status: "error", error: msg });
           warnings.push(`授权失败, 跳过授权继续: ${msg}`);
         }
@@ -135,7 +135,7 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
         const tx = extractTxFields(swapRaw);
         steps.push({ step: "swap", status: "ok", data: { to: tx.to, dataLen: tx.data?.length ?? 0, value: tx.value, gasPrice: tx.gasPrice, gas: tx.gas } });
       } catch (e) {
-        steps.push({ step: "swap", status: "error", error: e instanceof Error ? e.message : String(e) });
+        steps.push({ step: "swap", status: "error", error: errMsg(e) });
         return toResult({ steps, summary: { status: "failed", failedAt: "swap", reason: "构建交易失败, 无法继续" } }, { warnings });
       }
 
@@ -151,7 +151,7 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
         });
         steps.push({ step: "simulate", status: "ok", data: simR });
       } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
+        const msg = errMsg(e);
         steps.push({ step: "simulate", status: "error", error: msg });
         warnings.push(`模拟执行失败: ${msg}。广播前请手动调用 onchainos_gateway_simulate 确认`);
       }
@@ -191,16 +191,16 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
       const results = await Promise.allSettled([
         marketApi.tokenAdvancedInfo(auth, chainIndex, tokenContractAddress)
           .then(d => ({ step: "advanced_info", status: "ok" as const, data: d }))
-          .catch(e => ({ step: "advanced_info", status: "error" as const, error: e instanceof Error ? e.message : String(e) })),
+          .catch(e => ({ step: "advanced_info", status: "error" as const, error: errMsg(e) })),
         marketApi.tokenClusterOverview(auth, chainIndex, tokenContractAddress)
           .then(d => ({ step: "cluster_overview", status: "ok" as const, data: d }))
-          .catch(e => ({ step: "cluster_overview", status: "error" as const, error: e instanceof Error ? e.message : String(e) })),
+          .catch(e => ({ step: "cluster_overview", status: "error" as const, error: errMsg(e) })),
         marketApi.memepumpBundleInfo(auth, chainIndex, tokenContractAddress)
           .then(d => ({ step: "bundle_info", status: "ok" as const, data: d }))
-          .catch(e => ({ step: "bundle_info", status: "error" as const, error: e instanceof Error ? e.message : String(e) })),
+          .catch(e => ({ step: "bundle_info", status: "error" as const, error: errMsg(e) })),
         marketApi.memepumpTokenDevInfo(auth, chainIndex, tokenContractAddress)
           .then(d => ({ step: "dev_info", status: "ok" as const, data: d }))
-          .catch(e => ({ step: "dev_info", status: "error" as const, error: e instanceof Error ? e.message : String(e) })),
+          .catch(e => ({ step: "dev_info", status: "error" as const, error: errMsg(e) })),
       ]);
 
       const steps: StepResult[] = [];
@@ -219,8 +219,8 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
       const devInfo = steps.find(s => s.step === "dev_info" && s.status === "ok")?.data as any;
 
       // Factor 1: HoneyPot (30 pts)
-      if (advInfo?.isHoneypot) { score += 30; factors.push("检测到貔貅(HoneyPot)"); }
-      if (advInfo?.isHoneyPot) { score += 30; factors.push("检测到貔貅(HoneyPot)"); }
+      // FIX: 合并 isHoneypot/isHoneyPot 避免双倍计分
+      if (advInfo?.isHoneypot || advInfo?.isHoneyPot) { score += 30; factors.push("检测到貔貅(HoneyPot)"); }
 
       // Factor 2: Risk Level (20 pts)
       const riskLevel = (advInfo?.riskLevel ?? "").toUpperCase();
@@ -305,7 +305,7 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
           priceImpact = Math.abs(parseFloat((quoteR as any).priceImpactPercent ?? "0"));
           steps.push({ step: "quote_impact", status: "ok", data: { priceImpactPercent: priceImpact } });
         } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
+          const msg = errMsg(e);
           steps.push({ step: "quote_impact", status: "error", error: msg });
           warnings.push(`报价查询失败, 跳过价格影响评估: ${msg}`);
         }
@@ -331,7 +331,7 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
         }
         steps.push({ step: "volatility", status: "ok", data: { coefficientOfVariation: +volatility.toFixed(4), candleCount: candles.length } });
       } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
+        const msg = errMsg(e);
         steps.push({ step: "volatility", status: "error", error: msg });
         warnings.push(`K线查询失败, 使用默认波动率 0.5: ${msg}`);
       }
@@ -412,7 +412,7 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
         signals = (Array.isArray(raw) ? raw : (raw as any)?.dataList ?? (raw as any)?.signals ?? []) as any[];
         steps.push({ step: "signal_list", status: "ok", data: { totalSignals: signals.length } });
       } catch (e) {
-        steps.push({ step: "signal_list", status: "error", error: e instanceof Error ? e.message : String(e) });
+        steps.push({ step: "signal_list", status: "error", error: errMsg(e) });
         return toResult({ steps, signals: [], summary: { status: "failed", reason: "信号获取失败" } });
       }
 
@@ -517,7 +517,7 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
         const price = await marketApi.price(auth, [{ chainIndex, tokenContractAddress }]);
         steps.push({ step: "price", status: "ok", data: price });
       } catch (e) {
-        steps.push({ step: "price", status: "error", error: e instanceof Error ? e.message : String(e) });
+        steps.push({ step: "price", status: "error", error: errMsg(e) });
         warnings.push("价格查询失败");
       }
 
@@ -526,7 +526,7 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
         const candles = await marketApi.candles(auth, { chainIndex, tokenContractAddress, bar: "1H", limit: "24" });
         steps.push({ step: "candles_24h", status: "ok", data: { barCount: Array.isArray(candles) ? candles.length : 0 } });
       } catch (e) {
-        steps.push({ step: "candles_24h", status: "error", error: e instanceof Error ? e.message : String(e) });
+        steps.push({ step: "candles_24h", status: "error", error: errMsg(e) });
       }
 
       // Step 3: 安全分析
@@ -534,7 +534,7 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
         const security = await marketApi.tokenAdvancedInfo(auth, chainIndex, tokenContractAddress);
         steps.push({ step: "security", status: "ok", data: { riskLevel: (security as any)?.riskLevel, isHoneypot: (security as any)?.isHoneypot } });
       } catch (e) {
-        steps.push({ step: "security", status: "error", error: e instanceof Error ? e.message : String(e) });
+        steps.push({ step: "security", status: "error", error: errMsg(e) });
       }
 
       // Step 4: 社媒情绪(有 symbol 时)
@@ -543,7 +543,7 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
           const sentiment = await marketApi.socialSentimentSymbol(auth, { tokenSymbols: tokenSymbol.toUpperCase(), timeFrame: "3" });
           steps.push({ step: "sentiment", status: "ok", data: sentiment });
         } catch (e) {
-          steps.push({ step: "sentiment", status: "error", error: e instanceof Error ? e.message : String(e) });
+          steps.push({ step: "sentiment", status: "error", error: errMsg(e) });
         }
       } else {
         steps.push({ step: "sentiment", status: "skipped", warning: "未提供 tokenSymbol, 跳过社媒情绪" });
@@ -620,7 +620,7 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
           },
         });
       } catch (e) {
-        steps.push({ step: "quote", status: "error", error: e instanceof Error ? e.message : String(e) });
+        steps.push({ step: "quote", status: "error", error: errMsg(e) });
         return toResult({ steps, summary: { status: "failed", failedAt: "quote", reason: "报价失败, 请确认参数或链/代币是否支持跨链路由" } }, { warnings });
       }
 
@@ -686,7 +686,7 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
           },
         });
       } catch (e) {
-        steps.push({ step: "build", status: "error", error: e instanceof Error ? e.message : String(e) });
+        steps.push({ step: "build", status: "error", error: errMsg(e) });
         return toResult({ steps, summary: { status: "failed", failedAt: "build", reason: "构建跨链交易失败" } }, { warnings });
       }
 
@@ -702,7 +702,7 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
         });
         steps.push({ step: "simulate", status: "ok", data: { success: true } });
       } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
+        const msg = errMsg(e);
         steps.push({ step: "simulate", status: "error", error: msg });
         warnings.push(`模拟执行失败: ${msg}。跨链交易可能包含桥接逻辑, 部分链不支持模拟`);
       }
@@ -779,7 +779,7 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
         }
         steps.push({ step: "current_price", status: "ok", data: { usdPrice: currentPrice, triggerPrice: targetPrice } });
       } catch (e) {
-        steps.push({ step: "current_price", status: "error", error: e instanceof Error ? e.message : String(e) });
+        steps.push({ step: "current_price", status: "error", error: errMsg(e) });
         return toResult({ steps, summary: { status: "failed", failedAt: "price_check", reason: "价格查询失败, 无法判断触发条件" } });
       }
 
@@ -844,7 +844,7 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
         const quoteR = await tradeApi.quote(auth, qParams);
         steps.push({ step: "quote", status: "ok", data: { priceImpactPercent: (quoteR as any)?.priceImpactPercent } });
       } catch (e) {
-        steps.push({ step: "quote", status: "error", error: e instanceof Error ? e.message : String(e) });
+        steps.push({ step: "quote", status: "error", error: errMsg(e) });
         return toResult({ steps, summary: { status: "failed", failedAt: "quote", reason: "报价失败, 无法执行条件单" } }, { warnings });
       }
 
@@ -855,7 +855,7 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
           await tradeApi.approveTransaction(auth, chainIndex, fromTokenAddress, amount);
           steps.push({ step: "approve", status: "ok", data: { tokenContractAddress: fromTokenAddress } });
         } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
+          const msg = errMsg(e);
           steps.push({ step: "approve", status: "error", error: msg });
           warnings.push(`授权失败, 跳过继续: ${msg}`);
         }
@@ -878,7 +878,7 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
         const tx = extractTxFields(swapRaw);
         steps.push({ step: "swap", status: "ok", data: { to: tx.to, dataLen: tx.data?.length ?? 0, value: tx.value } });
       } catch (e) {
-        steps.push({ step: "swap", status: "error", error: e instanceof Error ? e.message : String(e) });
+        steps.push({ step: "swap", status: "error", error: errMsg(e) });
         return toResult({ steps, summary: { status: "failed", failedAt: "swap", reason: "构建交易失败" } }, { warnings });
       }
 
@@ -894,7 +894,7 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
         });
         steps.push({ step: "simulate", status: "ok", data: { success: true } });
       } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
+        const msg = errMsg(e);
         steps.push({ step: "simulate", status: "error", error: msg });
         warnings.push(`模拟执行失败: ${msg}`);
       }
@@ -946,7 +946,7 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
         txDetail = await postTxApi.transactionDetail(auth, chainIndex, txHash);
         steps.push({ step: "tx_detail", status: "ok", data: { txHash, chainIndex } });
       } catch (e) {
-        steps.push({ step: "tx_detail", status: "error", error: e instanceof Error ? e.message : String(e) });
+        steps.push({ step: "tx_detail", status: "error", error: errMsg(e) });
         return toResult({ steps, summary: { status: "failed", failedAt: "tx_detail", reason: "无法获取交易详情, 请确认 txHash 和 chainIndex 正确" } });
       }
 
@@ -957,7 +957,7 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
         steps.push({ step: "gas_price", status: "ok", data: gasInfo });
       } catch (e) {
         gasInfo = null;
-        steps.push({ step: "gas_price", status: "error", error: e instanceof Error ? e.message : String(e) });
+        steps.push({ step: "gas_price", status: "error", error: errMsg(e) });
       }
 
       // ── Step 3: 诊断 ──────────────────────────────────
@@ -1191,7 +1191,7 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
             },
           });
         } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
+          const msg = errMsg(e);
           swapResults.push({ step: `swap_${i + 1}`, status: "error" as const, error: msg });
           warnings.push(`第 ${i + 1} 笔交易失败: ${msg}`);
           if (!autoExecute) break; // 非自动模式, 失败即停
@@ -1227,33 +1227,39 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
       if (!auth) return AUTH_REQUIRED("READ");
       const steps: StepResult[] = [];
 
-      // Step 1: 查链上 nonce
+      // Step 1: 查链上 nonce 状态
+      // FIX: 移除 gasLimit 查 nonce 的设计错误。gasLimit API 返回 gas 预估不含 nonce 字段。
+      // 改为: 有 pendingTxHash 时通过交易详情获取 nonce，否则提示用户手动查链
       try {
-        // 用ETH RPC 格式查 nonce (通过已有的 gateway 工具)
-        const simTest = await gatewayApi.gasLimit(auth, {
-          chainIndex,
-          fromAddress: userWalletAddress,
-          toAddress: userWalletAddress,
-          txAmount: "0",
-          extJson: { inputData: "0x" },
+        steps.push({
+          step: "chain_nonce", status: "ok", data: {
+            note: "EVM 链 nonce 需通过 eth_getTransactionCount RPC 查询。本工具通过交易历史推断 nonce 状态。",
+            tip: "链上 nonce = 已确认交易数。卡住的 pending 交易 nonce 可通过 pendingTxHash 查询。",
+          },
         });
-        steps.push({ step: "chain_nonce", status: "ok", data: { note: "nonce 信息通过 gasLimit 查询间接获取", raw: simTest } });
       } catch (e) {
-        steps.push({ step: "chain_nonce", status: "error", error: e instanceof Error ? e.message : String(e) });
+        steps.push({ step: "chain_nonce", status: "error", error: errMsg(e) });
       }
 
       // Step 2: 查 pending 交易
       if (pendingTxHash) {
         try {
           const txDetail = await postTxApi.transactionDetail(auth, chainIndex, pendingTxHash);
+          const detailNonce = (txDetail as any)?.nonce;
           steps.push({
             step: "pending_tx", status: "ok", data: {
-              txHash: pendingTxHash, nonce: (txDetail as any)?.nonce ?? "见详情",
+              txHash: pendingTxHash,
+              nonce: detailNonce ?? null,  // FIX: nonce 未知时返回 null 而非误导性字符串
               status: (txDetail as any)?.status ?? (txDetail as any)?.txStatus ?? "unknown",
             },
           });
+          // FIX W7: 自动填充 targetNonce
+          if (targetNonce === undefined && detailNonce != null && !isNaN(Number(detailNonce))) {
+            targetNonce = Number(detailNonce);
+            steps.push({ step: "nonce_auto_fill", status: "ok", data: { autoFilledNonce: targetNonce, source: "pending_tx" } });
+          }
         } catch (e) {
-          steps.push({ step: "pending_tx", status: "error", error: e instanceof Error ? e.message : String(e) });
+          steps.push({ step: "pending_tx", status: "error", error: errMsg(e) });
         }
       }
 
@@ -1269,7 +1275,7 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
           chainIndex,
           walletAddress: userWalletAddress,
           diagnosis,
-          targetNonce: targetNonce ?? "auto(由钱包管理)",
+          targetNonce: targetNonce ?? null,  // FIX: null = 由钱包自动管理
           tip: "EVM 交易 nonce 从 0 开始递增, 每笔交易 +1。如果一笔交易卡住, 后续交易都无法确认, 需要用相同 nonce 覆盖",
         },
       }, {
@@ -1295,11 +1301,12 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
       condition: z.enum(["above", "below"]).describe("above=价格高于目标时提醒; below=价格低于目标时提醒"),
       walletAddress: z.string().optional().describe("可选: 目标钱包地址(当条件触发时告知是否可交易)"),
     },
-    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    { readOnlyHint: false, idempotentHint: false, destructiveHint: false }, // FIX: price_alert 会建立WS连接，非纯只读
     async ({ chainIndex, tokenContractAddress, targetPrice, condition, walletAddress }) => {
       if (!auth) return AUTH_REQUIRED("READ");
       const steps: StepResult[] = [];
       const target = parseFloat(targetPrice);
+      if (isNaN(target) || target <= 0) return toError(new Error("targetPrice 必须是大于0的数字")); // FIX: NaN校验
 
       // Step 1: 查当前价格做基准
       let currentPrice = 0;
@@ -1309,7 +1316,7 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
         currentPrice = parseFloat((r as any)?.usdPrice ?? (r as any)?.price ?? "0");
         steps.push({ step: "current_price", status: "ok", data: { usdPrice: currentPrice } });
       } catch (e) {
-        steps.push({ step: "current_price", status: "error", error: e instanceof Error ? e.message : String(e) });
+        steps.push({ step: "current_price", status: "error", error: errMsg(e) });
       }
 
       // Step 2: 判断离触发有多远
@@ -1331,7 +1338,7 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
         await (await import("../adapters/onchainos-ws.js")).wsSubscribe({ channel: "price", chainIndex, tokenContractAddress });
         steps.push({ step: "ws_setup", status: "ok", data: { connId, channel: "price" } });
       } catch (e) {
-        steps.push({ step: "ws_setup", status: "error", error: e instanceof Error ? e.message : String(e) });
+        steps.push({ step: "ws_setup", status: "error", error: errMsg(e) });
       }
 
       return toResult({
@@ -1390,7 +1397,7 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
         gasRaw = await gatewayApi.gasPrice(auth, chainIndex);
         steps.push({ step: "gas_price", status: "ok", data: gasRaw });
       } catch (e) {
-        steps.push({ step: "gas_price", status: "error", error: e instanceof Error ? e.message : String(e) });
+        steps.push({ step: "gas_price", status: "error", error: errMsg(e) });
         return toResult({ steps, summary: { status: "failed", reason: "无法获取 Gas 价格" } });
       }
 
@@ -1429,10 +1436,11 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
       // 估算成本
       const selected: GasTier = { maxPriorityFee: extract(gasLevel + "PriorityFee", 1), maxFeePerGas: extract(gasLevel + "MaxFee", 10) };
       let estimatedCostUsd: number | null = null;
+      let estimatedCostGwei = 0;
+      const commonGasLimit = 65000; // FIX: ERC20转账默认Gas(原21000仅够ETH转账)
       if (txValue) {
-        const commonGasLimit = 21000; // 简单转账
         const totalFeeGwei = selected.maxFeePerGas * commonGasLimit;
-        estimatedCostUsd = parseFloat(txValue) > 0 ? +(totalFeeGwei * parseFloat(txValue) / parseFloat(txValue)).toFixed(6) : null;
+        estimatedCostGwei = totalFeeGwei; // FIX: 直接输出Gwei成本+标注单位(原公式txValue/txValue=1恒等式)
       }
 
       return toResult({
@@ -1452,7 +1460,7 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
         recommended: {
           level: gasLevel,
           params: selected,
-          estimatedCost: estimatedCostUsd ? `~$${estimatedCostUsd.toFixed(4)} (基于 21000 Gas 估算)` : "提供 txValue 可估算成本",
+          estimatedCost: estimatedCostGwei > 0 ? `~${estimatedCostGwei.toFixed(0)} Gwei (${commonGasLimit} Gas Limit)` : "提供 txValue 可估算成本",
         },
         gasLevelGuide: {
           slow: "低费率, 确认慢, 适合非紧急交易",

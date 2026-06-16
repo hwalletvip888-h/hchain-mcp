@@ -1,0 +1,56 @@
+name: Agent Trigger
+
+on:
+  issues:
+    types: [labeled]
+
+jobs:
+  agent-dispatch:
+    if: contains(github.event.label.name, 'agent-ready') || contains(github.event.label.name, 'agent-pending')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Log Agent Trigger
+        run: |
+          echo "========================================="
+          echo "  hchain Agent Trigger 已激活"
+          echo "========================================="
+          echo "Issue: #${{ github.event.issue.number }}"
+          echo "标题: ${{ github.event.issue.title }}"
+          echo "标签: ${{ toJson(github.event.issue.labels.*.name) }}"
+          echo "作者: ${{ github.event.issue.user.login }}"
+          echo "URL: ${{ github.event.issue.html_url }}"
+          echo "========================================="
+
+      - name: Parse Issue Type
+        id: parse
+        run: |
+          LABELS="${{ toJson(github.event.issue.labels.*.name) }}"
+          if echo "$LABELS" | grep -q "trade"; then
+            echo "type=trade" >> $GITHUB_OUTPUT
+          elif echo "$LABELS" | grep -q "research"; then
+            echo "type=research" >> $GITHUB_OUTPUT
+          elif echo "$LABELS" | grep -q "bug"; then
+            echo "type=bug" >> $GITHUB_OUTPUT
+          else
+            echo "type=unknown" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Dispatch Result
+        run: |
+          echo "分派类型: ${{ steps.parse.outputs.type }}"
+          echo "Agent 将自动处理此 Issue"
+          # TODO: 在此处集成实际的 Agent 调用
+          # 例如: 调用 MCP Server 或 Claude Code CLI

@@ -14,6 +14,12 @@ export interface NextStep {
   condition?: string;
 }
 
+// ── errMsg — 统一错误消息提取 ────────────────────────────────
+/** 提取错误对象的消息文本，用于日志/steps/返回体 */
+export function errMsg(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
 // ── toResult ────────────────────────────────────────────────
 export function toResult<T>(data: T, opts?: { warnings?: string[]; nextSteps?: NextStep[] }): CallToolResult {
   const body: Record<string, unknown> = { success: true, data, tsIso: new Date().toISOString() };

@@ -1,6 +1,53 @@
 # hchain-skills — Agent 操作指南
 
-> 版本 2.2 · 专属 Agent 的链上全功能 MCP · 109 tools（含 13 个组合技能），超越官方 OnchainOS
+> 版本 2.3 · 专属 Agent 的链上全功能 MCP · 109 tools（含 13 个组合技能）+ **Agent协作框架：10 Agent + 7 命令 + 2 工作流**，超越官方 OnchainOS
+
+---
+
+## 🤖 Agent 协作框架（NEW v2.3）
+
+### 架构概览
+
+```
+用户意图 → Orchestrator (主编排, Opus)
+            ├── market-analyst    (行情, Sonnet)
+            ├── risk-assessor     (风控, Opus)
+            ├── trade-executor    (交易, Sonnet)
+            ├── portfolio-tracker (资产, Haiku)
+            ├── signal-scout      (信号, Sonnet)
+            ├── defi-strategist   (DeFi, Sonnet)
+            ├── social-analyst    (社媒, Haiku)
+            ├── code-reviewer     (审查, Opus)
+            └── test-engineer     (测试, Sonnet)
+              ↓
+         .claude/memory/bus.jsonl (共享黑board)
+```
+
+### 7 个流水线命令
+
+| 命令 | 用途 | 示例 |
+|------|------|------|
+| `/dispatch` | 智能任务派发 | `/dispatch "调研 0xABC"` |
+| `/research` | 代币深度调研 | `/research 0xABC 1` |
+| `/trade` | 完整交易流水线 | `/trade 0xA 0xB 100` |
+| `/scan` | 全链机会扫描 | `/scan new` |
+| `/monitor` | 持仓监控 | `/monitor` |
+| `/audit` | 安全审计 | `/audit 0xABC` |
+| `/workflow` | YAML工作流引擎 | `/workflow research-pipeline '{...}'` |
+
+### 快速派发
+
+当用户提出复杂需求时，优先使用 `/dispatch` 自动分解并派发给专业Agent团队：
+- 调研类 → market-analyst + risk-assessor + social-analyst 并行
+- 交易类 → risk-assessor → trade-executor 串行
+- 监控类 → portfolio-tracker + defi-strategist 并行
+
+### Agent间通信
+
+所有 Agent 通过 `.claude/memory/bus.jsonl` (JSONL黑board) 通信：
+```json
+{"ts":"ISO时间","agent":"agent名","task_id":"任务ID","status":"started|done|failed","data":{}}
+```
 
 ---
 
