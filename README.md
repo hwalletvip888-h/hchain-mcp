@@ -1,17 +1,17 @@
-# hchain-mcp
+# hchain-skills
 
-[![npm version](https://img.shields.io/npm/v/hchain-mcp?style=flat-square)](https://www.npmjs.com/package/hchain-mcp)
-[![npm downloads](https://img.shields.io/npm/dm/hchain-mcp?style=flat-square)](https://www.npmjs.com/package/hchain-mcp)
+[![npm version](https://img.shields.io/npm/v/hchain-skills?style=flat-square)](https://www.npmjs.com/package/hchain-skills)
+[![npm downloads](https://img.shields.io/npm/dm/hchain-skills?style=flat-square)](https://www.npmjs.com/package/hchain-skills)
 [![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen?style=flat-square)](https://nodejs.org)
-[![CI](https://img.shields.io/github/actions/workflow/status/hwalletvip888-h/hchain-mcp/ci.yml?style=flat-square)](https://github.com/hwalletvip888-h/hchain-mcp/actions)
-[![License](https://img.shields.io/npm/l/hchain-mcp?style=flat-square)](LICENSE)
+[![CI](https://img.shields.io/github/actions/workflow/status/hwalletvip888-h/hchain-skills/ci.yml?style=flat-square)](https://github.com/hwalletvip888-h/hchain-skills/actions)
+[![License](https://img.shields.io/npm/l/hchain-skills?style=flat-square)](LICENSE)
 
 AI-native multi-chain trading MCP Server — 109 tools over HTTP & stdio.
 
 ## Install
 
 ```bash
-npm install -g hchain-mcp
+npm install -g hchain-skills
 ```
 
 ## Usage
@@ -19,7 +19,7 @@ npm install -g hchain-mcp
 ### stdio (local Agent)
 
 ```bash
-hchain-mcp
+hchain-skills
 ```
 
 Set API Key:
@@ -28,17 +28,17 @@ Set API Key:
 export OKX_API_KEY=xxx
 export OKX_SECRET_KEY=xxx
 export OKX_PASSPHRASE=xxx
-hchain-mcp
+hchain-skills
 ```
 
 ### HTTP (remote Agent)
 
 ```bash
-hchain-mcp start:http
+hchain-skills start:http
 # → http://127.0.0.1:3000
 
 # or custom port
-PORT=3099 hchain-mcp start:http
+PORT=3099 hchain-skills start:http
 ```
 
 Endpoints:
@@ -53,9 +53,9 @@ Endpoints:
 ```json
 {
   "mcpServers": {
-    "hchain-mcp": {
+    "hchain-skills": {
       "command": "npx",
-      "args": ["hchain-mcp"],
+      "args": ["hchain-skills"],
       "env": {
         "OKX_API_KEY": "xxx",
         "OKX_SECRET_KEY": "xxx",
@@ -71,7 +71,7 @@ Or HTTP mode:
 ```json
 {
   "mcpServers": {
-    "hchain-mcp": {
+    "hchain-skills": {
       "url": "http://127.0.0.1:3099/mcp"
     }
   }
@@ -116,10 +116,10 @@ Or HTTP mode:
 ## Docker
 
 ```bash
-docker build -t hchain-mcp .
-docker run --rm -e OKX_API_KEY=xxx -e OKX_SECRET_KEY=xxx -e OKX_PASSPHRASE=xxx hchain-mcp
+docker build -t hchain-skills .
+docker run --rm -e OKX_API_KEY=xxx -e OKX_SECRET_KEY=xxx -e OKX_PASSPHRASE=xxx hchain-skills
 # HTTP mode:
-docker run --rm -p 3000:3000 -e PORT=3000 -e OKX_API_KEY=xxx -e OKX_SECRET_KEY=xxx -e OKX_PASSPHRASE=xxx hchain-mcp npx hchain-mcp start:http
+docker run --rm -p 3000:3000 -e PORT=3000 -e OKX_API_KEY=xxx -e OKX_SECRET_KEY=xxx -e OKX_PASSPHRASE=xxx hchain-skills npx hchain-skills start:http
 ```
 
 ## Test

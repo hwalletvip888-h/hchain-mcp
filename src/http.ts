@@ -1,5 +1,5 @@
 /**
- * h-mcp Server — HTTP 传输层
+ * hchain-skills Server — HTTP 传输层
  * 规范: AGENT-MCP-RULES.md §12 (传输层透明 + 无状态)
  * 使用 StreamableHTTPServerTransport (SDK 推荐), 废弃的 SSE transport 已跳过
  *
@@ -68,10 +68,10 @@ setInterval(() => {
 async function main() {
   const auth = resolveAuth();
   if (!auth) {
-    console.error("[h-mcp] 未配置 API Key。设置 OKX_API_KEY / OKX_SECRET_KEY / OKX_PASSPHRASE");
-    console.error("[h-mcp] 获取: https://web3.okx.com/onchainos/dev-portal");
+    console.error("[hchain-skills] 未配置 API Key。设置 OKX_API_KEY / OKX_SECRET_KEY / OKX_PASSPHRASE");
+    console.error("[hchain-skills] 获取: https://web3.okx.com/onchainos/dev-portal");
   } else {
-    console.error("[h-mcp] Auth 已配置");
+    console.error("[hchain-skills] Auth 已配置");
   }
 
   const host = process.env.HOST ?? "127.0.0.1";
@@ -83,7 +83,7 @@ async function main() {
   });
 
   // 2. MCP Server + 全部工具注册
-  const server = new McpServer({ name: "hchain-mcp", version });
+  const server = new McpServer({ name: "hchain-skills", version });
 
   registerBalanceTools(server, auth);
   registerGatewayTools(server, auth);
@@ -137,7 +137,7 @@ async function main() {
         }
         await transport.handleRequest(req, res, body);
       } catch (e) {
-        console.error("[h-mcp] handleRequest error:", e);
+        console.error("[hchain-skills] handleRequest error:", e);
         if (!res.headersSent) {
           res.writeHead(500, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "Internal server error" }));
@@ -152,23 +152,23 @@ async function main() {
   });
 
   httpServer.listen(port, host, () => {
-    console.error(`[h-mcp] HTTP MCP Server 已启动 → http://${host}:${port}`);
-    console.error(`[h-mcp] MCP endpoint: POST http://${host}:${port}/mcp`);
-    console.error(`[h-mcp] Health check: GET  http://${host}:${port}/health`);
+    console.error(`[hchain-skills] HTTP MCP Server 已启动 → http://${host}:${port}`);
+    console.error(`[hchain-skills] MCP endpoint: POST http://${host}:${port}/mcp`);
+    console.error(`[hchain-skills] Health check: GET  http://${host}:${port}/health`);
   });
 
   // Graceful shutdown
   function shutdown(signal: string) {
-    console.error(`[h-mcp] 收到 ${signal}，优雅关闭 HTTP 服务器`);
+    console.error(`[hchain-skills] 收到 ${signal}，优雅关闭 HTTP 服务器`);
     httpServer.close(() => {
-      console.error("[h-mcp] HTTP 服务器已关闭");
+      console.error("[hchain-skills] HTTP 服务器已关闭");
       process.exit(0);
     });
     // 强制关闭超时
-    setTimeout(() => { console.error("[h-mcp] 强制关闭"); process.exit(1); }, 5000).unref();
+    setTimeout(() => { console.error("[hchain-skills] 强制关闭"); process.exit(1); }, 5000).unref();
   }
   process.on("SIGTERM", () => shutdown("SIGTERM"));
   process.on("SIGINT", () => shutdown("SIGINT"));
 }
 
-main().catch(e => { console.error("[h-mcp] 启动失败:", e); process.exit(1); });
+main().catch(e => { console.error("[hchain-skills] 启动失败:", e); process.exit(1); });

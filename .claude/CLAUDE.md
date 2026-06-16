@@ -1,6 +1,6 @@
-# hchain-mcp — Agent 操作指南
+# hchain-skills — Agent 操作指南
 
-> 版本 2.2 · 专属 Agent 的链上全功能 MCP · 109 tools 覆盖 OKX OnchainOS
+> 版本 2.2 · 专属 Agent 的链上全功能 MCP · 109 tools（含 13 个组合技能），超越官方 OnchainOS
 
 ---
 

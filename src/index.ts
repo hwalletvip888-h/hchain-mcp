@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * h-mcp Server — stdio 传输
+ * hchain-skills Server — stdio 传输
  * 规范: OnchainOS-API对接规范.md §五
  */
 import "dotenv/config";
@@ -27,7 +27,7 @@ const { version } = JSON.parse(
 );
 
 function shutdown(signal: string) {
-  console.error(`[h-mcp] 收到 ${signal}，优雅退出`);
+  console.error(`[hchain-skills] 收到 ${signal}，优雅退出`);
   process.exit(0);
 }
 process.on("SIGTERM", () => shutdown("SIGTERM"));
@@ -36,13 +36,13 @@ process.on("SIGINT", () => shutdown("SIGINT"));
 async function main() {
   const auth = resolveAuth();
   if (!auth) {
-    console.error("[h-mcp] 未配置 API Key。设置 OKX_API_KEY / OKX_SECRET_KEY / OKX_PASSPHRASE");
-    console.error("[h-mcp] 获取: https://web3.okx.com/onchainos/dev-portal");
+    console.error("[hchain-skills] 未配置 API Key。设置 OKX_API_KEY / OKX_SECRET_KEY / OKX_PASSPHRASE");
+    console.error("[hchain-skills] 获取: https://web3.okx.com/onchainos/dev-portal");
   } else {
-    console.error("[h-mcp] Auth 已配置");
+    console.error("[hchain-skills] Auth 已配置");
   }
 
-  const server = new McpServer({ name: "hchain-mcp", version });
+  const server = new McpServer({ name: "hchain-skills", version });
 
   // 逐模块注册工具 (按官方文档对接)
   registerBalanceTools(server, auth);
@@ -59,7 +59,7 @@ async function main() {
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("[h-mcp] 就绪");
+  console.error("[hchain-skills] 就绪");
 }
 
-main().catch(e => { console.error("[h-mcp] 启动失败:", e); process.exit(1); });
+main().catch(e => { console.error("[hchain-skills] 启动失败:", e); process.exit(1); });

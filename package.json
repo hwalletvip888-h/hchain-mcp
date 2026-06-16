@@ -1,22 +1,22 @@
 {
-  "name": "hchain-mcp",
+  "name": "hchain-skills",
   "version": "1.1.1",
-  "description": "hchain-mcp — AI-native multi-chain trading MCP Server, 99 tools over HTTP & stdio",
+  "description": "hchain-skills — AI-native multi-chain trading MCP Server (109 tools / 13 composite skills, beyond official OnchainOS)",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "hchain-mcp": "dist/index.js"
+    "hchain-skills": "dist/index.js"
   },
   "files": [
     "dist/"
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/hwalletvip888-h/hchain-mcp.git"
+    "url": "git+https://github.com/hwalletvip888-h/hchain-skills.git"
   },
-  "homepage": "https://github.com/hwalletvip888-h/hchain-mcp#readme",
+  "homepage": "https://github.com/hwalletvip888-h/hchain-skills#readme",
   "bugs": {
-    "url": "https://github.com/hwalletvip888-h/hchain-mcp/issues"
+    "url": "https://github.com/hwalletvip888-h/hchain-skills/issues"
   },
   "engines": {
     "node": ">=18.0.0"
