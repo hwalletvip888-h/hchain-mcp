@@ -10,6 +10,7 @@ import {
   gatewayApi,
   marketApi,
   intentApi,
+  postTxApi,
 } from "../adapters/onchainos.js";
 import { toResult, toError, AUTH_REQUIRED } from "../adapters/shared.js";
 import type { Auth, NextStep } from "../adapters/shared.js";
@@ -916,6 +917,114 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
           { action: "如有 signatureData 先执行授权", tool: "onchainos_gateway_broadcast", condition: "swapRaw.signatureData 存在时" },
           { action: "签名后广播交易", tool: "onchainos_gateway_broadcast", params: { chainIndex, address: userWalletAddress } },
           { action: "查交易状态", tool: "onchainos_gateway_orders", params: { chainIndex } },
+        ],
+      });
+    },
+  );
+
+  // ── 8. 交易加速器 (RBF/Cancel) ─────────────────────────
+
+  server.tool("onchainos_skill_tx_accelerator",
+    "链上-Skill | 交易加速器: 诊断并指导修复卡住的交易。📋 Agent 调用场景: 用户说'交易卡住了/一直 pending/帮我加速/帮我取消这笔交易/stuck transaction'。查交易状态+当前Gas, 提供RBF加速或取消的详细指引",
+    {
+      chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '42161'=Arbitrum。先调 onchainos_tx_history_supported_chain 确认支持"),
+      txHash: z.string().describe("卡住的交易哈希"),
+      userWalletAddress: z.string().describe("发起交易的钱包地址"),
+      action: z.enum(["auto", "speed_up", "cancel"]).optional().default("auto").describe("auto=自动诊断推荐; speed_up=强制加速(提高Gas); cancel=强制取消(0-value自转)"),
+    },
+    { readOnlyHint: false, idempotentHint: false, destructiveHint: true },
+    async (params) => {
+      if (!auth) return AUTH_REQUIRED("TRADE");
+      const steps: StepResult[] = [];
+      const { chainIndex, txHash, userWalletAddress, action } = params;
+
+      // ── Step 1: 查交易详情 ─────────────────────────────
+      let txDetail: any;
+      try {
+        txDetail = await postTxApi.transactionDetail(auth, chainIndex, txHash);
+        steps.push({ step: "tx_detail", status: "ok", data: { txHash, chainIndex } });
+      } catch (e) {
+        steps.push({ step: "tx_detail", status: "error", error: e instanceof Error ? e.message : String(e) });
+        return toResult({ steps, summary: { status: "failed", failedAt: "tx_detail", reason: "无法获取交易详情, 请确认 txHash 和 chainIndex 正确" } });
+      }
+
+      // ── Step 2: 查当前 Gas ─────────────────────────────
+      let gasInfo: any;
+      try {
+        gasInfo = await gatewayApi.gasPrice(auth, chainIndex);
+        steps.push({ step: "gas_price", status: "ok", data: gasInfo });
+      } catch (e) {
+        gasInfo = null;
+        steps.push({ step: "gas_price", status: "error", error: e instanceof Error ? e.message : String(e) });
+      }
+
+      // ── Step 3: 诊断 ──────────────────────────────────
+      const txStatus = txDetail?.status ?? txDetail?.txStatus ?? txDetail?.state ?? "unknown";
+      const isPending = ["pending", "0", "mempool", "unconfirmed"].includes(String(txStatus).toLowerCase());
+
+      if (!isPending && action === "auto") {
+        return toResult({
+          steps,
+          diagnosis: {
+            txHash, chainIndex, txStatus,
+            isStuck: false,
+            message: `交易状态为 "${txStatus}", 不是 pending 状态, 无需加速`,
+          },
+          summary: { status: "completed", message: `交易已确认, 状态: ${txStatus}` },
+        });
+      }
+
+      const currentGas = gasInfo?.gasPrice ?? gasInfo?.suggestedGas ?? gasInfo?.fast ?? 0;
+      const recommendedGas = typeof currentGas === "number" ? Math.ceil(currentGas * 1.3) : "查当前 Gas 后计算";
+
+      return toResult({
+        steps,
+        diagnosis: {
+          txHash, chainIndex,
+          txStatus,
+          isStuck: true,
+          reason: "交易在 mempool 中长时间未确认",
+        },
+        acceleratorPlan: {
+          recommendedAction: action === "cancel" ? "cancel" : "speed_up",
+          gasRecommendation: {
+            currentNetworkGas: currentGas,
+            recommendedGasPrice: recommendedGas,
+            increasePercent: 30,
+            note: "建议至少提高 30% Gas 以确保被矿工优先打包",
+          },
+          steps: action === "cancel"
+            ? [
+                "1. 构造一笔新的交易: 从同一地址发送 0 ETH/代币 给自己 (to=from)",
+                `2. 使用相同的 nonce (${txDetail?.nonce ?? "从交易详情中获取"})`,
+                `3. Gas Price 设为 ${recommendedGas} (当前网络 Gas 的 130%)`,
+                "4. data 置空 (0x)",
+                "5. 用钱包签名并广播 → 覆盖原交易使其失败",
+              ]
+            : [
+                "1. 构造一笔新交易: 复制原交易的 to/data/value",
+                `2. 使用相同的 nonce (${txDetail?.nonce ?? "从交易详情中获取"})`,
+                `3. Gas Price 设为 ${recommendedGas} (当前网络 Gas 的 130%)`,
+                "4. 用钱包签名并广播 → 替换原交易",
+              ],
+          replacementTxParams: {
+            from: userWalletAddress,
+            to: action === "cancel" ? userWalletAddress : (txDetail?.to ?? ""),
+            value: action === "cancel" ? "0" : (txDetail?.value ?? "0"),
+            data: action === "cancel" ? "0x" : (txDetail?.data ?? txDetail?.input ?? "0x"),
+            nonce: txDetail?.nonce ?? "见交易详情",
+            gasPrice: recommendedGas,
+          },
+        },
+        summary: {
+          status: "action_needed",
+          message: `请用户用钱包对替换交易签名后, 通过 ${action === "cancel" ? "取消" : "加速"} 方式广播`,
+        },
+      }, {
+        nextSteps: [
+          { action: "用钱包签名替换交易(离链)", tool: "—" },
+          { action: "广播替换交易", tool: "onchainos_gateway_broadcast", params: { chainIndex, address: userWalletAddress } },
+          { action: "确认新交易状态", tool: "onchainos_transaction_detail", params: { chainIndex, txHash: "{{新交易哈希}}" } },
         ],
       });
     },
