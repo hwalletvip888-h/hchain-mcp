@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.2.0 — 2026-06-16
+
+### Added
+- **🔥 跨链原子交换** `onchainos_skill_crosschain_swap` — 源链→目标链一站式兑换（intent/direct 双模式）
+- **🔥 条件订单** `onchainos_skill_conditional_order` — 限价买入/卖出 + 止损卖出，价格自动触发
+- **🔥 交易加速器** `onchainos_skill_tx_accelerator` — pending 交易诊断 + RBF 加速/取消指引
+- **🔥 社媒叙事分析** `onchainos_skill_social_narrative` — 情绪+热度+KOL+新闻 5 维并行聚合
+- **批量兑换** `onchainos_skill_batch_swap` — 1-10 笔交易顺序执行
+- **Nonce 管理器** `onchainos_skill_nonce_manager` — Nonce 状态诊断 + 覆盖指引
+- **WS 价格预警** `onchainos_skill_price_alert` — WebSocket 实时监控价格触发
+- **EIP-1559 Gas 配置器** `onchainos_skill_gas_configurator` — slow/average/fast 三档优先级费用
+- 工具总数从 101 → **109**（96 基础 API + 13 组合技能）
+
+### Changed
+- 项目重命名 `hchain-mcp` → `hchain-skills`（明确社区版定位，避免与官方混淆）
+- 安装命令变更为 `npm install -g hchain-skills`
+
 ## 1.0.3 — 2026-06-15
 
 ### Added
