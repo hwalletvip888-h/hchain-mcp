@@ -1,6 +1,6 @@
 # hchain-mcp — Agent 操作指南
 
-> 版本 2.1 · 专属 Agent 的链上全功能 MCP · 105 tools 覆盖 OKX OnchainOS
+> 版本 2.2 · 专属 Agent 的链上全功能 MCP · 109 tools 覆盖 OKX OnchainOS
 
 ---
 
@@ -49,6 +49,10 @@
 | "跨链兑换/把A链的X换成B链的Y" | `onchainos_skill_crosschain_swap` — **跨链原子交换** |
 | "帮我挂个限价单/止损/到XX价格买卖" | `onchainos_skill_conditional_order` — **条件订单(限价/止损)** |
 | "交易卡住了/加速交易/取消交易" | `onchainos_skill_tx_accelerator` — **交易加速器** |
+| "批量兑换/一次换多个币/分散买入" | `onchainos_skill_batch_swap` — **批量兑换** |
+| "Nonce乱了/帮我查nonce" | `onchainos_skill_nonce_manager` — **Nonce管理器** |
+| "监控价格/盯盘/到了提醒我" | `onchainos_skill_price_alert` — **WS价格预警** |
+| "Gas多少/自定义Gas/EIP-1559设置" | `onchainos_skill_gas_configurator` — **Gas配置器** |
 | "查报价" | `onchainos_dex_quote` — 最优兑换报价 |
 | "建议滑点设多少" | `onchainos_skill_smart_slippage` — 智能滑点推荐 |
 | "查兑换状态" | `onchainos_dex_swap_history` / `onchainos_gateway_orders` |

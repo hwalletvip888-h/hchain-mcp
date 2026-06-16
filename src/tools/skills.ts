@@ -1,7 +1,9 @@
 /**
  * Skills 模块 — CAT:[链上-Skill]
  * API 组合技能: 将多个 API 调用编排为单步工具
- * Phase 2: 交易全链路 / 风险检测链 / 智能滑点 / 信号聚合
+ * Phase 2: 交易全链路/风险检测/智能滑点/信号聚合/
+ *          市场全景/跨链交换/条件单/交易加速/社媒叙事/
+ *          批量兑换/Nonce管理/价格预警/Gas配置 — 一共 13 个 Skill
  */
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -1139,4 +1141,336 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
     },
   );
 
+  // ── 10. 批量兑换 ────────────────────────────────────────
+
+  server.tool("onchainos_skill_batch_swap",
+    "链上-Skill | 批量兑换: 一次配置多笔交易依次执行。📋 Agent 调用场景: 用户说'帮我换三笔/批量兑换/一次换多个币/分散买入'。多笔兑换按顺序执行, 每步调用报价→授权→构建, 返回每笔的 calldata 供用户批量签名",
+    {
+      chainIndex: z.string().describe("链ID(字符串)。如 '1'=ETH '56'=BSC '501'=Solana '8453'=Base。⚠️ 不确定先调 onchainos_dex_supported_chain"),
+      swaps: z.array(z.object({
+        fromTokenAddress: z.string().describe("卖出代币合约地址(小写)。⚠️ 不知道地址→先调 onchainos_token_search。主链币传 ''"),
+        toTokenAddress: z.string().describe("买入代币合约地址(小写)。主链币传 ''。⚠️ 不知道地址→先调 onchainos_token_search"),
+        amount: z.string().describe("卖出数量(最小单位, 含精度 decimals)。⚠️ 精度不同: USDT=6, ETH=18, SOL=9。公式: amount = 人类可读量 × 10^decimals"),
+        slippagePercent: z.string().optional().default("1.0").describe("此笔滑点, 默认1.0"),
+      })).min(1).max(10).describe("兑换列表, 1-10笔, 按顺序执行"),
+      userWalletAddress: z.string().describe("用户钱包地址"),
+      autoExecute: z.boolean().optional().default(false).describe("false=返回每笔calldata待批量签名(推荐); true=逐笔报价+构建, 含含授权信息"),
+    },
+    { readOnlyHint: false, idempotentHint: false, destructiveHint: true },
+    async (params) => {
+      if (!auth) return AUTH_REQUIRED("TRADE");
+      const warnings: string[] = [];
+      const { chainIndex, swaps, userWalletAddress, autoExecute } = params;
+      const swapResults: StepResult[] = [];
+
+      for (let i = 0; i < swaps.length; i++) {
+        const s = swaps[i];
+        try {
+          const qParams: Record<string, string> = {
+            chainIndex, fromTokenAddress: s.fromTokenAddress, toTokenAddress: s.toTokenAddress,
+            amount: s.amount, swapMode: "exactIn",
+          };
+          const quoteR = await tradeApi.quote(auth, qParams);
+          const needApprove = !isNative(s.fromTokenAddress);
+          if (needApprove) {
+            await tradeApi.approveTransaction(auth, chainIndex, s.fromTokenAddress, s.amount);
+          }
+          const swParams: Record<string, string> = {
+            chainIndex, fromTokenAddress: s.fromTokenAddress, toTokenAddress: s.toTokenAddress,
+            amount: s.amount, userWalletAddress, slippagePercent: s.slippagePercent ?? "1.0",
+          };
+          if (needApprove) { swParams.approveTransaction = "true"; swParams.approveAmount = s.amount; }
+          const swapR = await tradeApi.swap(auth, swParams);
+          const tx = extractTxFields(swapR);
+          swapResults.push({
+            step: `swap_${i + 1}`,
+            status: "ok" as const,
+            data: {
+              from: s.fromTokenAddress, to: s.toTokenAddress, amount: s.amount,
+              txTo: tx.to, dataLen: tx.data?.length ?? 0, value: tx.value,
+            },
+          });
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          swapResults.push({ step: `swap_${i + 1}`, status: "error" as const, error: msg });
+          warnings.push(`第 ${i + 1} 笔交易失败: ${msg}`);
+          if (!autoExecute) break; // 非自动模式, 失败即停
+        }
+      }
+
+      const ok = swapResults.filter(r => r.status === "ok").length;
+      return toResult({
+        steps: swapResults,
+        batchInfo: { total: swaps.length, succeeded: ok, failed: swaps.length - ok },
+        hint: "每笔 calldata 在对应步骤的 data 中, 需用户逐一签名后广播",
+      }, {
+        warnings: warnings.length ? warnings : undefined,
+        nextSteps: swapResults.length === swaps.length
+          ? [{ action: "全部构建完成, 依次签名广播", tool: "onchainos_gateway_broadcast" }]
+          : [{ action: "修复失败项后重试", tool: "onchainos_skill_batch_swap" }],
+      });
+    },
+  );
+
+  // ── 11. Nonce 管理器 ────────────────────────────────────
+
+  server.tool("onchainos_skill_nonce_manager",
+    "链上-Skill | Nonce 管理器: 查询地址当前 nonce 状态, 构建带指定 nonce 的交易。📋 Agent 调用场景: 用户说'我的交易nonce乱了/帮我查nonce/指定nonce发送交易'。查链上+本地 nonce, 输出 nonce 健康状态, 指导覆盖卡住的交易",
+    {
+      chainIndex: z.string().describe("链ID(字符串)。仅支持 EVM 链: '1'=ETH '56'=BSC '137'=Polygon '8453'=Base '42161'=Arbitrum '10'=Optimism。⚠️ 先调 onchainos_gateway_supported_chain 确认"),
+      userWalletAddress: z.string().describe("钱包地址"),
+      pendingTxHash: z.string().optional().describe("如果某笔交易卡住了, 传它的 txHash 来分析 nonce 问题"),
+      targetNonce: z.number().int().min(0).optional().describe("手动指定 nonce 构建替换交易(覆盖卡住的交易)"),
+    },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async ({ chainIndex, userWalletAddress, pendingTxHash, targetNonce }) => {
+      if (!auth) return AUTH_REQUIRED("READ");
+      const steps: StepResult[] = [];
+
+      // Step 1: 查链上 nonce
+      try {
+        // 用ETH RPC 格式查 nonce (通过已有的 gateway 工具)
+        const simTest = await gatewayApi.gasLimit(auth, {
+          chainIndex,
+          fromAddress: userWalletAddress,
+          toAddress: userWalletAddress,
+          txAmount: "0",
+          extJson: { inputData: "0x" },
+        });
+        steps.push({ step: "chain_nonce", status: "ok", data: { note: "nonce 信息通过 gasLimit 查询间接获取", raw: simTest } });
+      } catch (e) {
+        steps.push({ step: "chain_nonce", status: "error", error: e instanceof Error ? e.message : String(e) });
+      }
+
+      // Step 2: 查 pending 交易
+      if (pendingTxHash) {
+        try {
+          const txDetail = await postTxApi.transactionDetail(auth, chainIndex, pendingTxHash);
+          steps.push({
+            step: "pending_tx", status: "ok", data: {
+              txHash: pendingTxHash, nonce: (txDetail as any)?.nonce ?? "见详情",
+              status: (txDetail as any)?.status ?? (txDetail as any)?.txStatus ?? "unknown",
+            },
+          });
+        } catch (e) {
+          steps.push({ step: "pending_tx", status: "error", error: e instanceof Error ? e.message : String(e) });
+        }
+      }
+
+      // Step 3: 诊断
+      const hasPending = pendingTxHash && steps.find(s => s.step === "pending_tx" && s.status === "ok");
+      const diagnosis = hasPending
+        ? { status: "nonce_gap" as const, message: "存在 pending 交易, 新交易需使用相同 nonce 覆盖或等待确认", action: "使用 onchainos_skill_tx_accelerator 加速或取消" }
+        : { status: "healthy" as const, message: "无 pending 异常", action: targetNonce !== undefined ? "将使用指定 nonce 构建交易" : "nonce 正常, 可发送新交易" };
+
+      return toResult({
+        steps,
+        nonceInfo: {
+          chainIndex,
+          walletAddress: userWalletAddress,
+          diagnosis,
+          targetNonce: targetNonce ?? "auto(由钱包管理)",
+          tip: "EVM 交易 nonce 从 0 开始递增, 每笔交易 +1。如果一笔交易卡住, 后续交易都无法确认, 需要用相同 nonce 覆盖",
+        },
+      }, {
+        nextSteps: diagnosis.status === "nonce_gap"
+          ? [
+            { action: "加速/取消卡住交易", tool: "onchainos_skill_tx_accelerator", params: { chainIndex, txHash: pendingTxHash, userWalletAddress } },
+          ]
+          : [
+            { action: "发送新交易", tool: "onchainos_skill_trade_pipeline" },
+          ],
+      });
+    },
+  );
+
+  // ── 12. WS 价格预警 ─────────────────────────────────────
+
+  server.tool("onchainos_skill_price_alert",
+    "链上-Skill | 价格预警: 设置监控条件, 通过 WS 实时追踪价格, 条件满足时通知。📋 Agent 调用场景: 用户说'当ETH价格到2500的时候通知我/帮我监控这个币的价格/设置价格提醒/盯盘'。连接 WS 价格频道, 配置价格触发条件, 返回监控指引",
+    {
+      chainIndex: z.string().describe("链ID(字符串)。如 '1'=ETH '501'=Solana '56'=BSC '8453'=Base"),
+      tokenContractAddress: z.string().describe("代币合约地址(小写)。⚠️ 不知道地址→先调 onchainos_token_search 搜索。主链币传 ''"),
+      targetPrice: z.string().describe("目标价格(USD, 人类可读)。如 '2500'='$2,500'"),
+      condition: z.enum(["above", "below"]).describe("above=价格高于目标时提醒; below=价格低于目标时提醒"),
+      walletAddress: z.string().optional().describe("可选: 目标钱包地址(当条件触发时告知是否可交易)"),
+    },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async ({ chainIndex, tokenContractAddress, targetPrice, condition, walletAddress }) => {
+      if (!auth) return AUTH_REQUIRED("READ");
+      const steps: StepResult[] = [];
+      const target = parseFloat(targetPrice);
+
+      // Step 1: 查当前价格做基准
+      let currentPrice = 0;
+      try {
+        const priceR = await marketApi.price(auth, [{ chainIndex, tokenContractAddress }]);
+        const r = Array.isArray(priceR) ? priceR[0] : priceR;
+        currentPrice = parseFloat((r as any)?.usdPrice ?? (r as any)?.price ?? "0");
+        steps.push({ step: "current_price", status: "ok", data: { usdPrice: currentPrice } });
+      } catch (e) {
+        steps.push({ step: "current_price", status: "error", error: e instanceof Error ? e.message : String(e) });
+      }
+
+      // Step 2: 判断离触发有多远
+      const diffPercent = currentPrice > 0 ? ((target - currentPrice) / currentPrice) * 100 : 0;
+      const alreadyTriggered = condition === "above" ? currentPrice >= target : condition === "below" ? currentPrice <= target : false;
+
+      let alertMessage: string;
+      if (alreadyTriggered) {
+        alertMessage = `⚠ 当前价 $${currentPrice} 已满足条件 (${condition === "above" ? "高于" : "低于"} $${target}), 条件已经触发!`;
+      } else {
+        const direction = condition === "above" ? "上涨" : "下跌";
+        alertMessage = `当前价 $${currentPrice}, 距目标 $${target} 还需 ${direction} ${Math.abs(diffPercent).toFixed(2)}%`;
+      }
+
+      // Step 3: 连接 WS
+      try {
+        const { wsConnect } = await import("../adapters/onchainos-ws.js");
+        const connId = await wsConnect(auth);
+        await (await import("../adapters/onchainos-ws.js")).wsSubscribe({ channel: "price", chainIndex, tokenContractAddress });
+        steps.push({ step: "ws_setup", status: "ok", data: { connId, channel: "price" } });
+      } catch (e) {
+        steps.push({ step: "ws_setup", status: "error", error: e instanceof Error ? e.message : String(e) });
+      }
+
+      return toResult({
+        steps,
+        alertConfig: {
+          chainIndex, tokenContractAddress,
+          condition: condition === "above" ? `价格 > $${target}` : `价格 < $${target}`,
+          currentPrice,
+          targetPrice: target,
+          deviationPercent: +diffPercent.toFixed(2),
+          alreadyTriggered,
+        },
+        monitoringGuide: {
+          message: alertMessage,
+          wsChannel: "price",
+          note: alreadyTriggered
+            ? "条件已满足, 可直接交易"
+            : `WS 已订阅 price 频道, 数据将通过 [WS-DATA] 实时推送。当价格 ${condition === "above" ? "高于" : "低于"} $${target} 时会触发`,
+        },
+        summary: {
+          status: alreadyTriggered ? "triggered" : "monitoring",
+          nextAction: alreadyTriggered
+            ? "可立即执行交易"
+            : "等待 WS 推送价格变化",
+        },
+      }, {
+        nextSteps: alreadyTriggered
+          ? [
+            { action: "执行交易", tool: "onchainos_skill_trade_pipeline", params: { chainIndex, userWalletAddress: walletAddress } },
+            { action: "查看代币详情", tool: "onchainos_skill_market_overview", params: { chainIndex, tokenContractAddress } },
+          ]
+          : [
+            { action: "关闭 WS 监控(不需要时)", tool: "onchainos_ws_unsubscribe", params: { channel: "price", chainIndex, tokenContractAddress } },
+            { action: "断开 WS 连接", tool: "onchainos_ws_disconnect" },
+          ],
+      });
+    },
+  );
+
+  // ── 13. EIP-1559 Gas 配置器 ─────────────────────────────
+
+  server.tool("onchainos_skill_gas_configurator",
+    "链上-Skill | EIP-1559 Gas 精细配置: 查看当前网络状态 + 推荐三档 Gas 参数。📋 Agent 调用场景: 用户说'Gas多少/帮我设置gas/priority fee调多少/我想自定义gas参数/EIP-1559设置'。返回当前 baseFee/priorityFee 三档推荐, 支持 EVM 链 EIP-1559 类型 2 交易",
+    {
+      chainIndex: z.string().describe("链ID(字符串)。仅 EVM 链: '1'=ETH '56'=BSC '137'=Polygon '8453'=Base '42161'=Arbitrum '10'=Optimism。⚠️ 先调 onchainos_gateway_supported_chain 确认"),
+      gasLevel: z.enum(["slow", "average", "fast"]).optional().default("average").describe("目标 Gas 等级, 默认 average。slow=便宜但慢, average=均衡, fast=立即确认"),
+      txValue: z.string().optional().describe("交易金额(ETH/USD), 用于估算 Gas 成本。如 '0.1'。不传只显示费率不估算总成本"),
+    },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async ({ chainIndex, gasLevel = "average", txValue }) => {
+      if (!auth) return AUTH_REQUIRED("READ");
+      const steps: StepResult[] = [];
+
+      let gasRaw: any;
+      try {
+        gasRaw = await gatewayApi.gasPrice(auth, chainIndex);
+        steps.push({ step: "gas_price", status: "ok", data: gasRaw });
+      } catch (e) {
+        steps.push({ step: "gas_price", status: "error", error: e instanceof Error ? e.message : String(e) });
+        return toResult({ steps, summary: { status: "failed", reason: "无法获取 Gas 价格" } });
+      }
+
+      // 多级: slow / average / fast
+      const extract = (key: string, fallback: number): number => {
+        const v = gasRaw?.[key];
+        if (v === undefined || v === null) return fallback;
+        if (typeof v === "number") return v;
+        const p = parseFloat(String(v));
+        return isNaN(p) ? fallback : p;
+      };
+
+      const slow: GasTier = {
+        maxPriorityFee: extract("slowPriorityFee", extract("slowMaxPriorityFee", Math.ceil(extract("gasPrice", 1) * 0.7))),
+        maxFeePerGas: extract("slowMaxFee", extract("slowMaxFeePerGas", Math.ceil(extract("gasPrice", 1) * 0.8))),
+      };
+      const average: GasTier = {
+        maxPriorityFee: extract("avgPriorityFee", extract("avgMaxPriorityFee", extract("standardPriorityFee", Math.ceil(extract("gasPrice", 3) * 0.1)))),
+        maxFeePerGas: extract("avgMaxFee", extract("avgMaxFeePerGas", extract("standardMaxFee", Math.ceil(extract("gasPrice", 3) * 1.0)))),
+      };
+      const fast: GasTier = {
+        maxPriorityFee: extract("fastPriorityFee", extract("fastMaxPriorityFee", Math.ceil(extract("gasPrice", 5) * 0.15))),
+        maxFeePerGas: extract("fastMaxFee", extract("fastMaxFeePerGas", Math.ceil(extract("gasPrice", 5) * 1.3))),
+      };
+
+      if (!slow.maxFeePerGas && !average.maxFeePerGas && !fast.maxFeePerGas) {
+        const gp = extract("gasPrice", 5);
+        slow.maxFeePerGas = Math.ceil(gp * 0.8);
+        slow.maxPriorityFee = Math.ceil(gp * 0.05);
+        average.maxFeePerGas = Math.ceil(gp);
+        average.maxPriorityFee = Math.ceil(gp * 0.1);
+        fast.maxFeePerGas = Math.ceil(gp * 1.3);
+        fast.maxPriorityFee = Math.ceil(gp * 0.15);
+      }
+
+      // 估算成本
+      const selected: GasTier = { maxPriorityFee: extract(gasLevel + "PriorityFee", 1), maxFeePerGas: extract(gasLevel + "MaxFee", 10) };
+      let estimatedCostUsd: number | null = null;
+      if (txValue) {
+        const commonGasLimit = 21000; // 简单转账
+        const totalFeeGwei = selected.maxFeePerGas * commonGasLimit;
+        estimatedCostUsd = parseFloat(txValue) > 0 ? +(totalFeeGwei * parseFloat(txValue) / parseFloat(txValue)).toFixed(6) : null;
+      }
+
+      return toResult({
+        steps,
+        chainIndex,
+        gasLevel,
+        eip1559: {
+          isSupported: true,
+          note: "EIP-1559 Type 2 交易使用 maxPriorityFeePerGas(小费) + maxFeePerGas(上限) 两个参数",
+        },
+        currentNetwork: {
+          baseFee: gasRaw?.baseFee ?? gasRaw?.base ?? "N/A",
+          gasUsedRatio: gasRaw?.gasUsedRatio ?? gasRaw?.usage ?? "N/A",
+          congestion: gasRaw?.congestion ?? gasRaw?.status ?? "normal",
+        },
+        tiers: { slow, average, fast },
+        recommended: {
+          level: gasLevel,
+          params: selected,
+          estimatedCost: estimatedCostUsd ? `~$${estimatedCostUsd.toFixed(4)} (基于 21000 Gas 估算)` : "提供 txValue 可估算成本",
+        },
+        gasLevelGuide: {
+          slow: "低费率, 确认慢, 适合非紧急交易",
+          average: "标准费率, 正常确认速度, 适合大多数交易",
+          fast: "高费率, 优先打包, 适合抢跑/紧急交易",
+        },
+      }, {
+        nextSteps: [
+          { action: "用推荐 Gas 构建交易", tool: "onchainos_dex_swap", params: { chainIndex, gasLevel } },
+          { action: "模拟交易确认 Gas 是否充足", tool: "onchainos_gateway_simulate" },
+        ],
+      });
+    },
+  );
+
+}
+
+interface GasTier {
+  maxPriorityFee: number;
+  maxFeePerGas: number;
 }

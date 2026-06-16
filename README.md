@@ -6,7 +6,7 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/hwalletvip888-h/hchain-mcp/ci.yml?style=flat-square)](https://github.com/hwalletvip888-h/hchain-mcp/actions)
 [![License](https://img.shields.io/npm/l/hchain-mcp?style=flat-square)](LICENSE)
 
-AI-native multi-chain trading MCP Server — 105 tools over HTTP & stdio.
+AI-native multi-chain trading MCP Server — 109 tools over HTTP & stdio.
 
 ## Install
 
@@ -78,7 +78,7 @@ Or HTTP mode:
 }
 ```
 
-## Tools (105)
+## Tools (109)
 
 ### Phase 1 — Base APIs (96 tools)
 
@@ -95,7 +95,7 @@ Or HTTP mode:
 | TxHistory | 3 | Transaction history |
 | Help | 1 | Interactive help & navigation |
 
-### Phase 2 — API Composition Skills (9 tools)
+### Phase 2 — API Composition Skills (13 tools)
 
 | Tool | Description |
 |------|-------------|
@@ -108,6 +108,10 @@ Or HTTP mode:
 | `onchainos_skill_conditional_order` | Conditional order: limit buy/sell + stop-loss with price trigger |
 | `onchainos_skill_tx_accelerator` | Stuck tx accelerator: RBF speed-up or cancel guidance |
 | `onchainos_skill_social_narrative` | Social narrative: sentiment + vibe + KOLs + news aggregation |
+| `onchainos_skill_batch_swap` | Batch swap: execute multiple swaps sequentially |
+| `onchainos_skill_nonce_manager` | Nonce manager: query address nonce, build replacement tx |
+| `onchainos_skill_price_alert` | Price alert: WS-driven price monitoring with condition triggers |
+| `onchainos_skill_gas_configurator` | EIP-1559 gas config: slow/average/fast with priority fees |
 
 ## Docker
 
