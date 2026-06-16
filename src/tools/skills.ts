@@ -1030,4 +1030,113 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
     },
   );
 
+  // ── 9. 社媒叙事分析 ────────────────────────────────────
+
+  server.tool("onchainos_skill_social_narrative",
+    "链上-Skill | 社媒叙事深度分析: 情绪+热度+KOL+新闻一站式聚合。📋 Agent 调用场景: 用户说'这个币在社区里讨论什么'/'社媒热度怎么样'/'看看舆论/叙事/大家都在说什么'。聚合情绪、热度、KOL、新闻多维度数据, 输出社媒全景分析",
+    {
+      chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '501'=Solana"),
+      tokenContractAddress: z.string().describe("代币合约地址(小写)。用于查 Vibe 热度数据"),
+      tokenSymbol: z.string().describe("代币符号(大写)。如 'ETH' 'SOL' 'PEPE'。用于查情绪和新闻"),
+      timeFrame: z.enum(["1","2","3","4","5"]).optional().default("3").describe("时间范围: '1'=24h '2'=3d '3'=7d '4'=1M '5'=3M。情绪和热度均使用"),
+    },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async ({ chainIndex, tokenContractAddress, tokenSymbol, timeFrame = "3" }) => {
+      if (!auth) return AUTH_REQUIRED("READ");
+      const steps: StepResult[] = [];
+      const warnings: string[] = [];
+      const sym = tokenSymbol.toUpperCase();
+
+      // 并行查 5 个维度
+      const [sentimentR, vibeR, newsR, kolsR, rankingR] = await Promise.allSettled([
+        marketApi.socialSentimentSymbol(auth, { tokenSymbols: sym, timeFrame, trendPoints: "7" })
+          .then(d => ({ step: "sentiment", status: "ok" as const, data: d })),
+        marketApi.socialVibeTimeline(auth, { chainIndex, tokenAddress: tokenContractAddress, timeFrame })
+          .then(d => ({ step: "vibe", status: "ok" as const, data: d })),
+        marketApi.socialNewsBySymbol(auth, { tokenSymbols: sym, limit: "5" })
+          .then(d => ({ step: "news", status: "ok" as const, data: d })),
+        marketApi.socialVibeTopKols(auth, { chainIndex, tokenAddress: tokenContractAddress, sortBy: "engagement", timeFrame, limit: "5" })
+          .then(d => ({ step: "top_kols", status: "ok" as const, data: d })),
+        marketApi.socialSentimentRanking(auth, { timeFrame, sortBy: "volume", limit: "50" })
+          .then(d => ({ step: "ranking", status: "ok" as const, data: d })),
+      ]);
+
+      for (const r of [sentimentR, vibeR, newsR, kolsR, rankingR]) {
+        if (r.status === "fulfilled") steps.push(r.value);
+        else steps.push({ step: "unknown", status: "error" as const, error: r.reason?.message ?? String(r.reason) });
+      }
+
+      // 提取分析数据
+      const sentiment = sentimentR.status === "fulfilled" ? (sentimentR.value.data ?? sentimentR.value) as any : null;
+      const vibe = vibeR.status === "fulfilled" ? (vibeR.value.data ?? vibeR.value) as any : null;
+      const news = newsR.status === "fulfilled" ? (newsR.value.data ?? newsR.value) as any : null;
+      const kols = kolsR.status === "fulfilled" ? (kolsR.value.data ?? kolsR.value) as any : null;
+      const ranking = rankingR.status === "fulfilled" ? (rankingR.value.data ?? rankingR.value) as any : null;
+
+      // 找排位
+      let rankPosition: number | null = null;
+      if (ranking && Array.isArray(ranking)) {
+        const idx = ranking.findIndex((r: any) => (r.tokenSymbol ?? "").toUpperCase() === sym);
+        if (idx >= 0) rankPosition = idx + 1;
+      }
+
+      // 情绪摘要
+      const sentData = Array.isArray(sentiment) ? sentiment[0] : sentiment;
+      const bullish = parseInt(sentData?.bullish ?? sentData?.bullishPercent ?? "0");
+      const bearish = parseInt(sentData?.bearish ?? sentData?.bearishPercent ?? "0");
+      const neutral = parseInt(sentData?.neutral ?? "0");
+      const totalSent = bullish + bearish + neutral;
+      const sentimentLabel = totalSent > 0
+        ? bullish > bearish * 1.5 ? "强烈看涨" : bullish > bearish ? "看涨" : bearish > bullish * 1.5 ? "强烈看跌" : bearish > bullish ? "看跌" : "中性"
+        : "无数据";
+
+      // Vibe 摘要
+      const vibeScore = vibe?.score ?? vibe?.vibeScore ?? "N/A";
+
+      // KOL 摘要
+      const topKols = Array.isArray(kols) ? kols.slice(0, 5).map((k: any) => ({
+        name: k.kolName ?? k.name ?? k.address,
+        engagement: k.engagement ?? k.mentions ?? "N/A",
+      })) : [];
+
+      return toResult({
+        steps,
+        socialNarrative: {
+          tokenSymbol: sym,
+          timeFrame,
+          sentiment: {
+            label: sentimentLabel,
+            bullishPercent: totalSent > 0 ? +((bullish / totalSent) * 100).toFixed(1) : null,
+            bearishPercent: totalSent > 0 ? +((bearish / totalSent) * 100).toFixed(1) : null,
+            neutralPercent: totalSent > 0 ? +((neutral / totalSent) * 100).toFixed(1) : null,
+            raw: sentData,
+          },
+          vibe: {
+            score: vibeScore,
+            rank: rankPosition ? `#${rankPosition}` : "未上榜",
+            detail: vibe,
+          },
+          topKols: topKols.length > 0 ? topKols : "暂无KOL数据",
+          latestNews: news ? (Array.isArray(news) ? news.slice(0, 5) : news) : "暂无新闻",
+        },
+        summary: {
+          status: "ready",
+          dimensions: steps.filter(s => s.status === "ok").length,
+          highlights: [
+            sentimentLabel !== "无数据" ? `社媒情绪: ${sentimentLabel} (看涨 ${bullish}% / 看跌 ${bearish}%)` : "社媒情绪: 无数据",
+            vibeScore !== "N/A" ? `热度评分: ${vibeScore}` : "热度: 无数据",
+            rankPosition ? `社交排行: #${rankPosition}` : "未进入排行前50",
+            topKols.length > 0 ? `活跃KOL: ${topKols.map((k: any) => k.name).join(", ")}` : "暂无KOL讨论",
+          ].filter(Boolean),
+        },
+      }, {
+        nextSteps: [
+          { action: "查看某条新闻详情", tool: "onchainos_social_news_detail", condition: "从新闻列表中选 articleId" },
+          { action: "查看完整KOL排行榜", tool: "onchainos_social_vibe_top_kols", params: { chainIndex, tokenAddress: tokenContractAddress } },
+          { action: "结合市场数据综合判断", tool: "onchainos_skill_market_overview", params: { chainIndex, tokenContractAddress, tokenSymbol: sym } },
+        ],
+      });
+    },
+  );
+
 }

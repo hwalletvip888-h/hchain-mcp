@@ -1,6 +1,6 @@
 # hchain-mcp — Agent 操作指南
 
-> 版本 2.1 · 专属 Agent 的链上全功能 MCP · 103 tools 覆盖 OKX OnchainOS
+> 版本 2.1 · 专属 Agent 的链上全功能 MCP · 105 tools 覆盖 OKX OnchainOS
 
 ---
 
@@ -48,6 +48,7 @@
 | "帮我买/卖/兑换 X 到 Y" | `onchainos_skill_trade_pipeline` — **全自动交易管线** |
 | "跨链兑换/把A链的X换成B链的Y" | `onchainos_skill_crosschain_swap` — **跨链原子交换** |
 | "帮我挂个限价单/止损/到XX价格买卖" | `onchainos_skill_conditional_order` — **条件订单(限价/止损)** |
+| "交易卡住了/加速交易/取消交易" | `onchainos_skill_tx_accelerator` — **交易加速器** |
 | "查报价" | `onchainos_dex_quote` — 最优兑换报价 |
 | "建议滑点设多少" | `onchainos_skill_smart_slippage` — 智能滑点推荐 |
 | "查兑换状态" | `onchainos_dex_swap_history` / `onchainos_gateway_orders` |
@@ -97,6 +98,7 @@
 | "查这个币的新闻" | `onchainos_social_news_by_symbol` |
 | "市场情绪怎么样" | `onchainos_social_sentiment_symbol` |
 | "这个代币热度如何" | `onchainos_social_vibe_timeline` |
+| "社媒全景/大家都在说什么/舆论分析" | `onchainos_skill_social_narrative` — **社媒叙事分析(情绪+热度+KOL+新闻)** |
 
 ---
 
@@ -229,4 +231,4 @@ onchainos_skill_crosschain_swap(mode=direct) → 跨链报价+构建交易
 | WS | 4 | `onchainos_ws_*` | WebSocket 连接 |
 | 市场全景 | 1 | `onchainos_skill_market_overview` | 价格+K线+安全+情绪一站式 |
 | 历史 | 3 | `onchainos_tx_*` / `onchainos_transaction_*` | 交易历史 |
-| Skill | 5 | `onchainos_skill_*` | 组合技能（含跨链交换） |
+| Skill | 9 | `onchainos_skill_*` | 组合技能（跨链/条件单/加速/社媒叙事） |
