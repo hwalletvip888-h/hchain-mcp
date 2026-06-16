@@ -266,6 +266,10 @@ export const tradeApi = {
 // ── Intent Swap API v6 ──────────────────────────────────────
 
 export const intentApi = {
+  /** GET /api/v6/dex/aggregator/quote with mode=intent — 意图模式报价(支持跨链), 返回 signData 含 EIP-712 签名字段 */
+  quote: (auth: Auth, params: Record<string, string>) =>
+    request("GET", "/api/v6/dex/aggregator/quote", { params: { ...params, mode: "intent" }, auth }),
+
   /** POST /api/v6/dex/aggregator/intent/create-order — 创建意图订单, 返回 orderUid */
   createOrder: (auth: Auth, body: Record<string, unknown>) =>
     request("POST", "/api/v6/dex/aggregator/intent/create-order", { body, auth }),

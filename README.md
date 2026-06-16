@@ -6,7 +6,7 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/hwalletvip888-h/hchain-mcp/ci.yml?style=flat-square)](https://github.com/hwalletvip888-h/hchain-mcp/actions)
 [![License](https://img.shields.io/npm/l/hchain-mcp?style=flat-square)](LICENSE)
 
-AI-native multi-chain trading MCP Server — 101 tools over HTTP & stdio.
+AI-native multi-chain trading MCP Server — 102 tools over HTTP & stdio.
 
 ## Install
 
@@ -78,7 +78,7 @@ Or HTTP mode:
 }
 ```
 
-## Tools (101)
+## Tools (102)
 
 ### Phase 1 — Base APIs (96 tools)
 
@@ -95,7 +95,7 @@ Or HTTP mode:
 | TxHistory | 3 | Transaction history |
 | Help | 1 | Interactive help & navigation |
 
-### Phase 2 — API Composition Skills (5 tools)
+### Phase 2 — API Composition Skills (6 tools)
 
 | Tool | Description |
 |------|-------------|
@@ -104,6 +104,7 @@ Or HTTP mode:
 | `onchainos_skill_smart_slippage` | Volatility-based slippage recommendation |
 | `onchainos_skill_signal_aggregate` | Signal discovery with automatic risk filtering |
 | `onchainos_skill_market_overview` | Market overview: price + candles + security + sentiment |
+| `onchainos_skill_crosschain_swap` | Cross-chain atomic swap: source → destination chain (intent/direct) |
 
 ## Docker
 

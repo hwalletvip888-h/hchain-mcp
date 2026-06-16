@@ -13,7 +13,7 @@ export function registerIntentTools(server: McpServer, auth: Auth | null): void 
   server.tool("onchainos_intent_create_order",
     "链上-Swap | 创建意图订单，提交 EIP-712 签名订单【场景:提交意图兑换订单】",
     {
-      chainIndex: z.string().describe("链ID(字符串)。此工具仅支持: '1'=ETH '56'=BSC '42161'=Arbitrum '8453'=Base"),
+      chainIndex: z.string().describe("源链ID(字符串)。订单在此链提交, Solver 竞价后可在目标链交付。⚠️ 用 onchainos_skill_crosschain_swap 做完整跨链流程"),
       fromTokenAddress: z.string().describe("卖出代币地址。须与 quote 的 signData.message.fromTokenAddress 一致"),
       toTokenAddress: z.string().describe("买入代币地址。须与 quote 的 signData.message.toTokenAddress 一致"),
       fromTokenAmount: z.string().describe("卖出数量(最小单位, 含精度 decimals)。须与 quote 的 signData.message.fromTokenAmount 一致。⚠️ 精度说明见 onchainos_token_basic_info"),

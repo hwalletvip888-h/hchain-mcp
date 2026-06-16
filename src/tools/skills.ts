@@ -9,6 +9,7 @@ import {
   tradeApi,
   gatewayApi,
   marketApi,
+  intentApi,
 } from "../adapters/onchainos.js";
 import { toResult, toError, AUTH_REQUIRED } from "../adapters/shared.js";
 import type { Auth, NextStep } from "../adapters/shared.js";
@@ -556,6 +557,176 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
           { action: "如需交易", tool: "onchainos_skill_trade_pipeline" },
         ],
       });
+    },
+  );
+
+  // ── 6. 跨链原子交换 ─────────────────────────────────────
+
+  server.tool("onchainos_skill_crosschain_swap",
+    "链上-Skill | 跨链原子交换: 源链→目标链一站式兑换。📋 Agent 调用场景: 用户说'把ETH主网的USDT跨到Solana换SOL'/'跨链兑换'/'跨链swap'/'把A链的X换成B链的Y'。支持 intent(拍卖结算,推荐)和 direct(聚合器路由)两种模式, 自动检测跨链路由, 返回签名数据+追踪指引",
+    {
+      fromChain: z.string().describe("源链ID(字符串)。如 '1'=ETH '501'=Solana '56'=BSC '8453'=Base '42161'=Arbitrum。⚠️ 不确定先调 onchainos_dex_supported_chain"),
+      toChain: z.string().describe("目标链ID(字符串)。与 fromChain 不同时为跨链兑换。⚠️ 不确定先调 onchainos_dex_supported_chain"),
+      fromTokenAddress: z.string().describe("卖出代币合约地址(小写)，在源链上。主链币传空字符串''。⚠️ 不知道地址→先调 onchainos_token_search"),
+      toTokenAddress: z.string().describe("买入代币合约地址(小写)，在目标链上。主链币传''。⚠️ 不知道地址→先调 onchainos_token_search 在目标链搜索"),
+      amount: z.string().describe(
+        "卖出数量(最小单位, 含精度 decimals)。" +
+        "⚠️ 不同代币精度不同: USDT(decimals=6) '1'=1000000, SOL(decimals=9) '1'=1000000000, ETH(decimals=18) '1'=1000000000000000000。" +
+        "公式: amount = 人类可读数量 × 10^decimals。不确定 decimals 先调 onchainos_token_basic_info"
+      ),
+      userWalletAddress: z.string().describe("用户钱包地址(源链上的地址)"),
+      slippagePercent: z.string().optional().default("1.0").describe("滑点百分比, 默认1.0。建议从 onchainos_skill_smart_slippage 获取"),
+      mode: z.enum(["intent", "direct"]).optional().default("intent").describe("intent=拍卖竞价(推荐, 零Gas前置, 原子性跨链结算); direct=聚合器路由(需用户签名+广播交易)"),
+      toWalletAddress: z.string().optional().describe("目标链收款地址。不传默认=userWalletAddress(需在目标链上存在)"),
+    },
+    { readOnlyHint: false, idempotentHint: false, destructiveHint: true },
+    async (params) => {
+      if (!auth) return AUTH_REQUIRED("TRADE");
+      const steps: StepResult[] = [];
+      const warnings: string[] = [];
+      const { fromChain, toChain, fromTokenAddress, toTokenAddress, amount, userWalletAddress, slippagePercent = "1.0", mode = "intent", toWalletAddress } = params;
+      const isCrossChain = fromChain !== toChain;
+
+      // ── Step 1: 报价 ─────────────────────────────────────
+      let quoteRaw: any;
+      try {
+        const qParams: Record<string, string> = {
+          fromChain, toChain,
+          fromTokenAddress, toTokenAddress, amount,
+          swapMode: "exactIn",
+          userWalletAddress,
+          slippagePercent,
+        };
+        const useIntent = mode === "intent";
+        quoteRaw = useIntent
+          ? await intentApi.quote(auth, qParams)
+          : await tradeApi.quote(auth, qParams);
+
+        const priceImpact = (quoteRaw as any)?.priceImpactPercent ?? "N/A";
+        const estGas = (quoteRaw as any)?.estimateGasFee ?? "N/A";
+        const routeInfo = (quoteRaw as any)?.routeInfo ?? (quoteRaw as any)?.route ?? [];
+        steps.push({
+          step: "quote",
+          status: "ok",
+          data: {
+            mode, fromChain, toChain,
+            priceImpactPercent: priceImpact,
+            estimateGasFee: estGas,
+            routeSteps: Array.isArray(routeInfo) ? routeInfo.length : 1,
+            isCrossChain,
+          },
+        });
+      } catch (e) {
+        steps.push({ step: "quote", status: "error", error: e instanceof Error ? e.message : String(e) });
+        return toResult({ steps, summary: { status: "failed", failedAt: "quote", reason: "报价失败, 请确认参数或链/代币是否支持跨链路由" } }, { warnings });
+      }
+
+      // ── Step 2: 构建执行数据 ─────────────────────────────
+      if (mode === "intent") {
+        // Intent 模式: 返回 signData, 用户签名后提交 intent order
+        const signData = (quoteRaw as any)?.signData;
+        if (!signData) {
+          steps.push({ step: "build", status: "error", error: "quote 未返回 signData, intent 报价可能不支持此跨链路由" });
+          return toResult({ steps, summary: { status: "failed", failedAt: "build", reason: "Intent 报价未包含签名数据, 建议改用 mode=direct" } });
+        }
+        steps.push({ step: "build", status: "ok", data: { needEip712Signature: true, signDataFields: Object.keys(signData?.message ?? {}) } });
+
+        return toResult({
+          steps,
+          crossChainInfo: { mode: "intent", fromChain, toChain, isCrossChain },
+          signData: {
+            ...signData,
+            _hint: "请用户用私钥对以上 signData 进行 EIP-712 签名, 得到 signature 后调用 onchainos_intent_create_order 提交订单",
+          },
+          routeInfo: (quoteRaw as any)?.routeInfo ?? (quoteRaw as any)?.route,
+          summary: {
+            status: "awaiting_signature",
+            message: "报价成功, 请用户签名后提交意图订单",
+            availableActions: [
+              { action: "用户对 signData 做 EIP-712 签名(离链)", tool: "—" },
+              { action: "提交签名订单", tool: "onchainos_intent_create_order" },
+              { action: "追踪订单状态", tool: "onchainos_intent_order_status" },
+              { action: "查看拍卖进度", tool: "onchainos_intent_auction_info" },
+            ],
+          },
+        });
+      }
+
+      // Direct 模式: 构建 swap calldata
+      let swapRaw: any;
+      try {
+        const sParams: Record<string, string> = {
+          fromChain, toChain,
+          fromTokenAddress, toTokenAddress, amount,
+          userWalletAddress,
+          slippagePercent,
+          swapMode: "exactIn",
+        };
+        if (toWalletAddress) sParams.swapReceiverAddress = toWalletAddress;
+        const needApprove = !isNative(fromTokenAddress);
+        if (needApprove) {
+          sParams.approveTransaction = "true";
+          sParams.approveAmount = amount;
+        }
+        swapRaw = await tradeApi.swap(auth, sParams);
+        const tx = extractTxFields(swapRaw);
+        steps.push({
+          step: "build",
+          status: "ok",
+          data: {
+            to: tx.to,
+            dataLen: tx.data?.length ?? 0,
+            value: tx.value,
+            gasPrice: tx.gasPrice,
+            gas: tx.gas,
+            hasSignatureData: !!((swapRaw as any)?.signatureData),
+          },
+        });
+      } catch (e) {
+        steps.push({ step: "build", status: "error", error: e instanceof Error ? e.message : String(e) });
+        return toResult({ steps, summary: { status: "failed", failedAt: "build", reason: "构建跨链交易失败" } }, { warnings });
+      }
+
+      // ── Step 3: 模拟(可选) ──────────────────────────────
+      const swapTx = extractTxFields(swapRaw);
+      try {
+        await gatewayApi.simulate(auth, {
+          fromAddress: userWalletAddress,
+          toAddress: swapTx.to,
+          chainIndex: fromChain,
+          txAmount: swapTx.value,
+          extJson: { inputData: swapTx.data },
+        });
+        steps.push({ step: "simulate", status: "ok", data: { success: true } });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        steps.push({ step: "simulate", status: "error", error: msg });
+        warnings.push(`模拟执行失败: ${msg}。跨链交易可能包含桥接逻辑, 部分链不支持模拟`);
+      }
+
+      const nextSteps: NextStep[] = [
+        { action: "如有 signatureData(授权calldata), 先执行授权", tool: "onchainos_gateway_broadcast", condition: "swapRaw.signatureData 存在时" },
+        { action: "用户签名 calldata", tool: "—", condition: "用私钥/钱包对 swap 步骤返回的 data 签名" },
+        { action: "广播签名交易(源链)", tool: "onchainos_gateway_broadcast", params: { chainIndex: fromChain, address: userWalletAddress } },
+        { action: "追踪跨链结算状态", tool: "onchainos_gateway_orders", params: { chainIndex: fromChain } },
+      ];
+      if (isCrossChain) {
+        nextSteps.push({ action: "跨链确认: 源链交易确认后, 在目标链查收", tool: "onchainos_transaction_history", params: { chains: toChain } });
+      }
+
+      return toResult({
+        steps,
+        crossChainInfo: { mode: "direct", fromChain, toChain, isCrossChain },
+        calldata: { to: swapTx.to, data: swapTx.data, value: swapTx.value, gasPrice: swapTx.gasPrice, gas: swapTx.gas },
+        routeInfo: (swapRaw as any)?.routeInfo ?? (swapRaw as any)?.route,
+        signatureData: (swapRaw as any)?.signatureData,
+        summary: {
+          status: "ready",
+          message: isCrossChain
+            ? `跨链交易已构建: 在 ${fromChain} 广播后, 资产将到达 ${toChain}`
+            : `同链交易已构建: 在 ${fromChain} 广播即可`,
+        },
+      }, { warnings: warnings.length ? warnings : undefined, nextSteps });
     },
   );
 
