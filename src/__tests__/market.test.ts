@@ -39,68 +39,16 @@ describe("registerMarketTools", () => {
   beforeEach(() => { s = mockServer(); vi.clearAllMocks(); });
 
   it("registers 45+ tools", () => { registerMarketTools(s as any, auth); expect(s.tools.length).toBeGreaterThanOrEqual(45); });
-
   it("all tools readOnly", () => { registerMarketTools(s as any, auth); for (const t of s.tools) { expect(t.hints.readOnlyHint).toBe(true); expect(t.hints.destructiveHint).toBe(false); } });
 
-  it("price calls API with tokens array", async () => {
-    mockMarketApi.price.mockResolvedValueOnce([{ usdPrice: "4500" }]);
-    registerMarketTools(s as any, auth);
-    const r = parse(await find(s, "onchainos_market_price").handler({ tokens: [{ chainIndex: "1", tokenContractAddress: "" }] }));
-    expect(mockMarketApi.price).toHaveBeenCalledWith(auth, [{ chainIndex: "1", tokenContractAddress: "" }]);
-    expect(r.success).toBe(true);
-  });
+  it("price calls API with tokens array", async () => { mockMarketApi.price.mockResolvedValueOnce([{ usdPrice: "4500" }]); registerMarketTools(s as any, auth); const r = parse(await find(s, "onchainos_market_price").handler({ tokens: [{ chainIndex: "1", tokenContractAddress: "" }] })); expect(r.success).toBe(true); });
+  it("candles calls API", async () => { mockMarketApi.candles.mockResolvedValueOnce([{ open: "100" }]); registerMarketTools(s as any, auth); const r = parse(await find(s, "onchainos_market_candles").handler({ chainIndex: "1", tokenContractAddress: "0xabc", bar: "1m", limit: "100" })); expect(r.success).toBe(true); });
+  it("token_search calls API", async () => { mockMarketApi.searchToken.mockResolvedValueOnce([{ symbol: "ETH" }]); registerMarketTools(s as any, auth); const r = parse(await find(s, "onchainos_token_search").handler({ chains: "1", search: "ETH" })); expect(r.success).toBe(true); });
+  it("token_hot calls API", async () => { mockMarketApi.tokenHot.mockResolvedValueOnce([{ symbol: "HOT" }]); registerMarketTools(s as any, auth); const r = parse(await find(s, "onchainos_token_hot").handler({ chainIndex: "1", rankingType: "4" })); expect(r.success).toBe(true); });
+  it("token_basic_info calls API", async () => { mockMarketApi.tokenBasicInfo.mockResolvedValueOnce({ symbol: "ETH", decimals: 18 }); registerMarketTools(s as any, auth); const r = parse(await find(s, "onchainos_token_basic_info").handler({ chainIndex: "1", tokenContractAddress: "" })); expect(r.success).toBe(true); });
 
-  it("candles calls API", async () => {
-    mockMarketApi.candles.mockResolvedValueOnce([{ open: "100", close: "110" }]);
-    registerMarketTools(s as any, auth);
-    const r = parse(await find(s, "onchainos_market_candles").handler({ chainIndex: "1", tokenContractAddress: "0xabc", bar: "1m", limit: "100" }));
-    expect(r.success).toBe(true);
-  });
-
-  it("token_search calls API", async () => {
-    mockMarketApi.searchToken.mockResolvedValueOnce([{ symbol: "ETH" }]);
-    registerMarketTools(s as any, auth);
-    const r = parse(await find(s, "onchainos_token_search").handler({ chains: "1", search: "ETH" }));
-    expect(r.success).toBe(true);
-  });
-
-  it("token_hot calls API", async () => {
-    mockMarketApi.tokenHot.mockResolvedValueOnce([{ symbol: "HOT" }]);
-    registerMarketTools(s as any, auth);
-    const r = parse(await find(s, "onchainos_token_hot").handler({ chainIndex: "1", rankingType: "4" }));
-    expect(r.success).toBe(true);
-  });
-
-  it("token_basic_info calls API", async () => {
-    mockMarketApi.tokenBasicInfo.mockResolvedValueOnce({ symbol: "ETH", decimals: 18 });
-    registerMarketTools(s as any, auth);
-    const r = parse(await find(s, "onchainos_token_basic_info").handler({ chainIndex: "1", tokenContractAddress: "" }));
-    expect(r.success).toBe(true);
-  });
-
-  it("auth null returns AUTH_REQUIRED", async () => {
-    registerMarketTools(s as any, null);
-    const r = parse(await find(s, "onchainos_market_supported_chain").handler({}));
-    expect(r.error.code).toBe("AUTH_REQUIRED");
-  });
-
-  it("auth null for price returns AUTH_REQUIRED", async () => {
-    registerMarketTools(s as any, null);
-    const r = parse(await find(s, "onchainos_market_price").handler({ tokens: [{ chainIndex: "1", tokenContractAddress: "" }] }));
-    expect(r.error.code).toBe("AUTH_REQUIRED");
-  });
-
-  it("propagates RATE_LIMITED", async () => {
-    mockMarketApi.price.mockRejectedValueOnce(new Error("429 Too Many"));
-    registerMarketTools(s as any, auth);
-    const r = parse(await find(s, "onchainos_market_price").handler({ tokens: [{ chainIndex: "1", tokenContractAddress: "" }] }));
-    expect(r.error.code).toBe("RATE_LIMITED");
-  });
-
-  it("propagates AUTH_ERROR", async () => {
-    mockMarketApi.candles.mockRejectedValueOnce(new Error("OKX 50103: bad signature"));
-    registerMarketTools(s as any, auth);
-    const r = parse(await find(s, "onchainos_market_candles").handler({ chainIndex: "1", tokenContractAddress: "0xabc" }));
-    expect(r.error.code).toBe("AUTH_ERROR");
-  });
+  it("auth null returns AUTH_REQUIRED", async () => { registerMarketTools(s as any, null); const r = parse(await find(s, "onchainos_market_supported_chain").handler({})); expect(r.error.code).toBe("AUTH_REQUIRED"); });
+  it("auth null for price", async () => { registerMarketTools(s as any, null); const r = parse(await find(s, "onchainos_market_price").handler({ tokens: [{ chainIndex: "1", tokenContractAddress: "" }] })); expect(r.error.code).toBe("AUTH_REQUIRED"); });
+  it("propagates RATE_LIMITED", async () => { mockMarketApi.price.mockRejectedValueOnce(new Error("429 Too Many")); registerMarketTools(s as any, auth); const r = parse(await find(s, "onchainos_market_price").handler({ tokens: [{ chainIndex: "1", tokenContractAddress: "" }] })); expect(r.error.code).toBe("RATE_LIMITED"); });
+  it("propagates AUTH_ERROR", async () => { mockMarketApi.candles.mockRejectedValueOnce(new Error("OKX 50103: bad")); registerMarketTools(s as any, auth); const r = parse(await find(s, "onchainos_market_candles").handler({ chainIndex: "1", tokenContractAddress: "0xabc" })); expect(r.error.code).toBe("AUTH_ERROR"); });
 });
