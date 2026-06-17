@@ -12,6 +12,7 @@ vi.mock("../adapters/onchainos.js", () => ({ tradeApi: mockTradeApi }));
 
 import { registerTradeTools } from "../tools/trade.js";
 import type { Auth } from "../adapters/shared.js";
+import { OkxError } from "../adapters/shared.js";
 
 interface RecordedTool { name: string; hints: Record<string, unknown>; handler: (...args: any[]) => any; }
 
@@ -101,7 +102,7 @@ describe("registerTradeTools", () => {
   });
 
   it("returns COIN_NOT_EXIST for bad token", async () => {
-    mockTradeApi.swap.mockRejectedValueOnce(new Error("OKX 81152: coin not found"));
+    mockTradeApi.swap.mockRejectedValueOnce(new OkxError("81152", "coin not found"));
     registerTradeTools(s as any, auth);
     const r = parse(await find(s, "onchainos_dex_swap")!.handler({
       chainIndex: "1", amount: "1", fromTokenAddress: "0xbad",

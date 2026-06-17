@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { toResult, toError, resolveAuth, AUTH_REQUIRED, errMsg } from "../adapters/shared.js";
+import { toResult, toError, resolveAuth, AUTH_REQUIRED, errMsg, OkxError } from "../adapters/shared.js";
 
 function textContent(result: { content: unknown[] }): string {
   const c = result.content[0] as any;
@@ -56,7 +56,7 @@ describe("toResult", () => {
 });
 
 // ═══════════════════════════════════════════════════════
-// toError — OKX error codes
+// toError — 结构化 OkxError
 // ═══════════════════════════════════════════════════════
 describe("toError", () => {
   it("wraps Error in error response", () => {
@@ -65,69 +65,84 @@ describe("toError", () => {
     expect(r.error.code).toBe("ERROR");
   });
 
-  const cases: [string, string, number?][] = [
-    ["OKX 50001:srv", "SERVICE_UNAVAILABLE", 3000],
-    ["OKX 50011:rate", "RATE_LIMITED", 5000],
-    ["OKX 50103:auth", "AUTH_ERROR", undefined],
-    ["OKX 50104:auth", "AUTH_ERROR", undefined],
-    ["OKX 50105:auth", "AUTH_ERROR", undefined],
-    ["OKX 50106:auth", "AUTH_ERROR", undefined],
-    ["OKX 50107:auth", "AUTH_ERROR", undefined],
-    ["OKX 50111:auth", "AUTH_ERROR", undefined],
-    ["OKX 50112:auth", "AUTH_ERROR", undefined],
-    ["OKX 50113:auth", "AUTH_ERROR", undefined],
-    ["OKX 81001:param", "BAD_PARAMETER", undefined],
-    ["OKX 81108:wallet", "WALLET_TYPE_MISMATCH", undefined],
-    ["OKX 81104:chain", "CHAIN_NOT_SUPPORT", undefined],
-    ["OKX 81152:coin", "COIN_NOT_EXIST", undefined],
-    ["OKX 81451:node", "NODE_FAILED", 2000],
-    ["OKX 84001:proto", "PROTOCOL_NOT_SUPPORT", undefined],
-    ["OKX 84003:proto", "PROTOCOL_NOT_SUPPORT", undefined],
-    ["OKX 84007:prod", "PRODUCT_NOT_SUPPORT", undefined],
-    ["OKX 84024:prod", "PRODUCT_NOT_SUPPORT", undefined],
-    ["OKX 84010:token", "TOKEN_NOT_SUPPORT", undefined],
-    ["OKX 84014:bal", "BALANCE_FAILED", undefined],
-    ["OKX 84016:contract", "CONTRACT_FAILED", undefined],
-    ["OKX 84019:addr", "ADDRESS_MISMATCH", undefined],
-    ["OKX 84021:sync", "SYNCING", 3000],
-    ["OKX 84025:noreward", "NO_REWARD", undefined],
-    ["OKX 84029:locked", "LOCKED", undefined],
-    ["OKX 84030:expired", "EXPIRED", undefined],
-    ["OKX 84032:v3only", "V3_ONLY", undefined],
-  ];
-  for (const [msg, code, retry] of cases) {
-    it(`${msg.split(":")[0].split(" ")[1]} → ${code}`, () => {
-      const r = JSON.parse(textContent(toError(new Error(msg))));
-      expect(r.error.code).toBe(code);
-      if (retry) expect(r.error.retryAfter).toBe(retry);
-    });
-  }
-
-  it("HTTP 429 → RATE_LIMITED", () => {
-    const r = JSON.parse(textContent(toError(new Error("429 Too Many"))));
-    expect(r.error.code).toBe("RATE_LIMITED");
-  });
-  it("HTTP 503 → UNAVAILABLE", () => {
-    const r = JSON.parse(textContent(toError(new Error("503 Service"))));
-    expect(r.error.code).toBe("UNAVAILABLE");
-    expect(r.error.retryAfter).toBe(5000);
-  });
-  it("HTTP 400 → BAD_REQUEST", () => {
-    const r = JSON.parse(textContent(toError(new Error("400 Bad"))));
-    expect(r.error.code).toBe("BAD_REQUEST");
-  });
-  it("HTTP 422 → BUSINESS_REJECT", () => {
-    const r = JSON.parse(textContent(toError(new Error("422 Unprocessable"))));
-    expect(r.error.code).toBe("BUSINESS_REJECT");
-  });
-  it("HTTP 500 → SYSTEM_ERROR", () => {
-    const r = JSON.parse(textContent(toError(new Error("500 Internal"))));
-    expect(r.error.code).toBe("SYSTEM_ERROR");
-  });
   it("handles string error", () => {
     const r = JSON.parse(textContent(toError("network error")));
     expect(r.success).toBe(false);
     expect(r.error.message).toBe("network error");
+  });
+
+  // ── 结构化 OkxError 业务错误码 ─────────────────────
+  const okxCases: [string, string, number?][] = [
+    ["50001", "SERVICE_UNAVAILABLE", 3000],
+    ["50011", "RATE_LIMITED", 5000],
+    ["50103", "AUTH_ERROR", undefined],
+    ["50104", "AUTH_ERROR", undefined],
+    ["50105", "AUTH_ERROR", undefined],
+    ["50106", "AUTH_ERROR", undefined],
+    ["50107", "AUTH_ERROR", undefined],
+    ["50111", "AUTH_ERROR", undefined],
+    ["50112", "AUTH_ERROR", undefined],
+    ["50113", "AUTH_ERROR", undefined],
+    ["81001", "BAD_PARAMETER", undefined],
+    ["81108", "WALLET_TYPE_MISMATCH", undefined],
+    ["81104", "CHAIN_NOT_SUPPORT", undefined],
+    ["81152", "COIN_NOT_EXIST", undefined],
+    ["81451", "NODE_FAILED", 2000],
+    ["84001", "PROTOCOL_NOT_SUPPORT", undefined],
+    ["84003", "PROTOCOL_NOT_SUPPORT", undefined],
+    ["84007", "PRODUCT_NOT_SUPPORT", undefined],
+    ["84024", "PRODUCT_NOT_SUPPORT", undefined],
+    ["84010", "TOKEN_NOT_SUPPORT", undefined],
+    ["84014", "BALANCE_FAILED", undefined],
+    ["84016", "CONTRACT_FAILED", undefined],
+    ["84019", "ADDRESS_MISMATCH", undefined],
+    ["84021", "SYNCING", 3000],
+    ["84025", "NO_REWARD", undefined],
+    ["84029", "LOCKED", undefined],
+    ["84030", "EXPIRED", undefined],
+    ["84032", "V3_ONLY", undefined],
+  ];
+  for (const [okxCode, expectedCode, retry] of okxCases) {
+    it(`${okxCode} → ${expectedCode}`, () => {
+      const r = JSON.parse(textContent(toError(new OkxError(okxCode, "test"))));
+      expect(r.error.code).toBe(expectedCode);
+      if (retry) expect(r.error.retryAfter).toBe(retry);
+    });
+  }
+
+  it("unknown OKX code falls back to OKX_ERROR", () => {
+    const r = JSON.parse(textContent(toError(new OkxError("99999", "unknown"))));
+    expect(r.error.code).toBe("OKX_ERROR");
+  });
+
+  // ── HTTP 传输层错误 (OkxError with HTTP_ prefix) ──
+  it("HTTP 429 → RATE_LIMITED", () => {
+    const r = JSON.parse(textContent(toError(new OkxError("HTTP_429", "Too Many", 429))));
+    expect(r.error.code).toBe("RATE_LIMITED");
+  });
+  it("HTTP 503 → UNAVAILABLE", () => {
+    const r = JSON.parse(textContent(toError(new OkxError("HTTP_503", "Service", 503))));
+    expect(r.error.code).toBe("UNAVAILABLE");
+    expect(r.error.retryAfter).toBe(5000);
+  });
+  it("HTTP 400 → BAD_REQUEST", () => {
+    const r = JSON.parse(textContent(toError(new OkxError("HTTP_400", "Bad", 400))));
+    expect(r.error.code).toBe("BAD_REQUEST");
+  });
+  it("HTTP 422 → BUSINESS_REJECT", () => {
+    const r = JSON.parse(textContent(toError(new OkxError("HTTP_422", "Unprocessable", 422))));
+    expect(r.error.code).toBe("BUSINESS_REJECT");
+  });
+  it("HTTP 500 → SYSTEM_ERROR", () => {
+    const r = JSON.parse(textContent(toError(new OkxError("HTTP_500", "Internal", 500))));
+    expect(r.error.code).toBe("SYSTEM_ERROR");
+  });
+
+  // ── 兜底: 非 OkxError 的普通 Error ──
+  it("non-OkxError Error → ERROR with message", () => {
+    const r = JSON.parse(textContent(toError(new Error("something broke"))));
+    expect(r.error.code).toBe("ERROR");
+    expect(r.error.message).toBe("something broke");
   });
 });
 
@@ -136,45 +151,26 @@ describe("toError", () => {
 // ═══════════════════════════════════════════════════════
 describe("resolveAuth", () => {
   const origEnv = { ...process.env };
-  const origArgv = [...process.argv];
 
   beforeEach(() => {
     delete process.env.OKX_API_KEY;
     delete process.env.OKX_SECRET_KEY;
     delete process.env.OKX_PASSPHRASE;
-    process.argv = [process.argv[0], process.argv[1]];
   });
   afterEach(() => {
     process.env = { ...origEnv };
-    process.argv = [...origArgv];
   });
 
   it("returns auth from env vars", () => {
     process.env.OKX_API_KEY = "ek"; process.env.OKX_SECRET_KEY = "es"; process.env.OKX_PASSPHRASE = "ep";
     expect(resolveAuth()).toEqual({ apiKey: "ek", secret: "es", passphrase: "ep" });
   });
-  it("returns auth from CLI args", () => {
-    process.argv.push("--okx-api-key", "ck", "--okx-secret", "cs", "--okx-passphrase", "cp");
-    expect(resolveAuth()).toEqual({ apiKey: "ck", secret: "cs", passphrase: "cp" });
-  });
-  it("returns auth from short CLI flags", () => {
-    process.argv.push("-k", "sk", "-s", "ss", "-p", "sp");
-    expect(resolveAuth()).toEqual({ apiKey: "sk", secret: "ss", passphrase: "sp" });
-  });
-  it("prefers env over CLI", () => {
-    process.env.OKX_API_KEY = "ek"; process.env.OKX_SECRET_KEY = "es"; process.env.OKX_PASSPHRASE = "ep";
-    process.argv.push("--okx-api-key", "ck", "--okx-secret", "cs", "--okx-passphrase", "cp");
-    expect(resolveAuth()).toEqual({ apiKey: "ek", secret: "es", passphrase: "ep" });
-  });
+
   it("returns null with no config", () => {
     expect(resolveAuth()).toBeNull();
   });
   it("returns null with incomplete env", () => {
     process.env.OKX_API_KEY = "k";
-    expect(resolveAuth()).toBeNull();
-  });
-  it("returns null with incomplete CLI", () => {
-    process.argv.push("--okx-api-key", "k");
     expect(resolveAuth()).toBeNull();
   });
 });

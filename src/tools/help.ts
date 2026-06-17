@@ -2,6 +2,7 @@
  * Help 导航工具 — Agent 首次连接 MCP 的"第一站"
  * 展示全功能总览、模块分类、场景速查、参数规则、新手路径
  */
+import { readFileSync } from "node:fs";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { toResult } from "../adapters/shared.js";
 import type { Auth } from "../adapters/shared.js";
@@ -15,12 +16,32 @@ export function registerHelpTools(server: McpServer, auth: Auth | null): void {
     {},
     { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async () => {
+      const { version } = JSON.parse(
+        readFileSync(new URL("../../package.json", import.meta.url), "utf-8"),
+      );
       return toResult({
         name: "hchain-skills",
-        version: "1.2.0",
+        version,
         toolCount: 109,
-        description: "AI原生多链交易MCP — 109工具，让Agent拥有链上超能力",
-        chains: "40+链: ETH(1) BSC(56) Solana(501) Base(8453) Arbitrum(42161) Polygon(137) Sui(784) TON(607) 等",
+        description: "AI原生多链交易MCP — 让Agent拥有链上超能力",
+        chains: "40+链: ETH(1) BSC(56) Solana(501) Base(8453) Arbitrum(42161) 等",
+
+        // ── 👋 直接抄这个试 ──
+        tryNow: [
+          "💬 对 Agent 说: '我的钱包有多少钱'",
+          "💬 对 Agent 说: 'ETH 现在什么价'",
+          "💬 对 Agent 说: '调研一下 0x... 这个代币安不安全'",
+          "💬 对 Agent 说: '帮我把 100 USDT 换成 ETH'",
+          "💬 对 Agent 说: '扫一下最近新发的币'",
+        ],
+        slashCommands: [
+          { cmd: "/research 0xABC", does: "代币深度调研 (行情+安全+社媒)" },
+          { cmd: "/trade 0xA 0xB 100", does: "完整交易流水线" },
+          { cmd: "/scan new", does: "扫新币 /scan smart 看聪明钱" },
+          { cmd: "/monitor", does: "持仓监控一览" },
+          { cmd: "/audit 0xABC", does: "代币安全审计" },
+          { cmd: "/dispatch \"要做什么\"", does: "智能任务派发给Agent团队" },
+        ],
 
         // ── 新手推荐路径 ──
         newbiePath: [

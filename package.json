@@ -12,11 +12,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/hwalletvip888-h/hchain-skills.git"
+    "url": "git+https://github.com/hwalletvip888-h/hchain-mcp.git"
   },
-  "homepage": "https://github.com/hwalletvip888-h/hchain-skills#readme",
+  "homepage": "https://github.com/hwalletvip888-h/hchain-mcp#readme",
   "bugs": {
-    "url": "https://github.com/hwalletvip888-h/hchain-skills/issues"
+    "url": "https://github.com/hwalletvip888-h/hchain-mcp/issues"
   },
   "engines": {
     "node": ">=18.0.0"

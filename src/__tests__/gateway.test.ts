@@ -9,6 +9,7 @@ vi.mock("../adapters/onchainos.js", () => ({ gatewayApi: mockGatewayApi, postTxA
 
 import { registerGatewayTools } from "../tools/gateway.js";
 import type { Auth } from "../adapters/shared.js";
+import { OkxError } from "../adapters/shared.js";
 
 interface RecordedTool {
   name: string; description: string; schema: Record<string, unknown>;
@@ -113,7 +114,7 @@ describe("registerGatewayTools", () => {
 
   // ── errors ──
   it("simulate returns SYSTEM_ERROR for 500", async () => {
-    mockGatewayApi.simulate.mockRejectedValueOnce(new Error("500 Internal"));
+    mockGatewayApi.simulate.mockRejectedValueOnce(new OkxError("HTTP_500", "Internal", 500));
     registerGatewayTools(s as any, auth);
     const r = parse(await find(s, "onchainos_gateway_simulate")!.handler({
       fromAddress: "0x1", toAddress: "0x2", chainIndex: "1", inputData: "0x",

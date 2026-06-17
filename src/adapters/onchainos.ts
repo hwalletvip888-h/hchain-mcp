@@ -5,6 +5,7 @@
  */
 import crypto from "node:crypto";
 import type { Auth } from "./shared.js";
+import { OkxError } from "./shared.js";
 
 const BASE = "https://web3.okx.com";
 
@@ -35,9 +36,9 @@ async function request<T>(
   }
 
   const res = await fetch(BASE + fullPath, { method, headers, ...(bodyStr ? { body: bodyStr } : {}) });
-  if (!res.ok) { const t = await res.text().catch(() => ""); throw new Error(`HTTP ${res.status}: ${t}`); }
+  if (!res.ok) { const t = await res.text().catch(() => ""); throw new OkxError(`HTTP_${res.status}`, t, res.status); }
   const json = await res.json() as { code: string; msg?: string; data?: T };
-  if (json.code && json.code !== "0") throw new Error(`OKX ${json.code}: ${json.msg ?? ""}`);
+  if (json.code && json.code !== "0") throw new OkxError(json.code, json.msg ?? "");
   return (json.data ?? json) as T;
 }
 

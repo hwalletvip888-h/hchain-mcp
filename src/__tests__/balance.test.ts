@@ -13,6 +13,7 @@ vi.mock("../adapters/onchainos.js", () => ({ balanceApi: mockBalanceApi }));
 
 import { registerBalanceTools } from "../tools/balance.js";
 import type { Auth } from "../adapters/shared.js";
+import { OkxError } from "../adapters/shared.js";
 
 interface RecordedTool {
   name: string; description: string; schema: Record<string, unknown>;
@@ -127,14 +128,14 @@ describe("registerBalanceTools", () => {
 
   // ── error paths ──
   it("returns RATE_LIMITED for 429", async () => {
-    mockBalanceApi.supportedChain.mockRejectedValueOnce(new Error("429 Too Many"));
+    mockBalanceApi.supportedChain.mockRejectedValueOnce(new OkxError("HTTP_429", "Too Many", 429));
     registerBalanceTools(s as any, auth);
     const r = parse(await find(s, "onchainos_balance_supported_chain")!.handler());
     expect(r.error.code).toBe("RATE_LIMITED");
   });
 
   it("returns CHAIN_NOT_SUPPORT for OKX 81104", async () => {
-    mockBalanceApi.totalValue.mockRejectedValueOnce(new Error("OKX 81104: chain not supported"));
+    mockBalanceApi.totalValue.mockRejectedValueOnce(new OkxError("81104", "chain not supported"));
     registerBalanceTools(s as any, auth);
     const r = parse(await find(s, "onchainos_balance_total_value")!.handler({ address: "0x1", chains: "999" }));
     expect(r.error.code).toBe("CHAIN_NOT_SUPPORT");

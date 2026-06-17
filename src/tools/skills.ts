@@ -34,16 +34,6 @@ function isNative(address: string): boolean {
   return NATIVE_ADDR.has(address) || NATIVE_ADDR.has(address.toLowerCase());
 }
 
-// ── fetchPrice ─────────────────────────────────────────────────
-/** 查询代币美元价格，失败返回 0 不抛异常 */
-async function fetchPrice(auth: Auth, chainIndex: string, tokenContractAddress: string): Promise<number> {
-  try {
-    const priceR = await marketApi.price(auth, [{ chainIndex, tokenContractAddress }]);
-    const r = Array.isArray(priceR) ? priceR[0] : priceR;
-    return parseFloat((r as any)?.usdPrice ?? (r as any)?.price ?? "0");
-  } catch { return 0; }
-}
-
 // ── buildSwapPipeline ──────────────────────────────────────────
 // FIX Bug 5: 提取 Skill 1/7/10 中重复的报价→授权→构建→模拟流水线
 interface SwapPipelineResult {

@@ -27,6 +27,7 @@ vi.mock("../adapters/onchainos.js", () => ({ marketApi: mockMarketApi }));
 
 import { registerMarketTools } from "../tools/market.js";
 import type { Auth } from "../adapters/shared.js";
+import { OkxError } from "../adapters/shared.js";
 
 interface RecordedTool { name: string; hints: Record<string, unknown>; handler: (...args: any[]) => any; }
 function mockServer() { const tools: RecordedTool[] = []; return { tools, tool(name: string, ...rest: any[]) { tools.push({ name, hints: rest[rest.length - 2] as Record<string, unknown>, handler: rest[rest.length - 1] as (...args: any[]) => any }); } }; }
@@ -49,6 +50,6 @@ describe("registerMarketTools", () => {
 
   it("auth null returns AUTH_REQUIRED", async () => { registerMarketTools(s as any, null); const r = parse(await find(s, "onchainos_market_supported_chain").handler({})); expect(r.error.code).toBe("AUTH_REQUIRED"); });
   it("auth null for price", async () => { registerMarketTools(s as any, null); const r = parse(await find(s, "onchainos_market_price").handler({ tokens: [{ chainIndex: "1", tokenContractAddress: "" }] })); expect(r.error.code).toBe("AUTH_REQUIRED"); });
-  it("propagates RATE_LIMITED", async () => { mockMarketApi.price.mockRejectedValueOnce(new Error("429 Too Many")); registerMarketTools(s as any, auth); const r = parse(await find(s, "onchainos_market_price").handler({ tokens: [{ chainIndex: "1", tokenContractAddress: "" }] })); expect(r.error.code).toBe("RATE_LIMITED"); });
-  it("propagates AUTH_ERROR", async () => { mockMarketApi.candles.mockRejectedValueOnce(new Error("OKX 50103: bad")); registerMarketTools(s as any, auth); const r = parse(await find(s, "onchainos_market_candles").handler({ chainIndex: "1", tokenContractAddress: "0xabc" })); expect(r.error.code).toBe("AUTH_ERROR"); });
+  it("propagates RATE_LIMITED", async () => { mockMarketApi.price.mockRejectedValueOnce(new OkxError("HTTP_429", "Too Many", 429)); registerMarketTools(s as any, auth); const r = parse(await find(s, "onchainos_market_price").handler({ tokens: [{ chainIndex: "1", tokenContractAddress: "" }] })); expect(r.error.code).toBe("RATE_LIMITED"); });
+  it("propagates AUTH_ERROR", async () => { mockMarketApi.candles.mockRejectedValueOnce(new OkxError("50103", "bad")); registerMarketTools(s as any, auth); const r = parse(await find(s, "onchainos_market_candles").handler({ chainIndex: "1", tokenContractAddress: "0xabc" })); expect(r.error.code).toBe("AUTH_ERROR"); });
 });

@@ -28,11 +28,21 @@ const { version } = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf-8"),
 );
 
-/** 简陋 body parser — 读 JSON body 到 req.body */
+/** body parser — 读 JSON body 到 req.body, 限制最大 10MB */
+const MAX_BODY_BYTES = 10 * 1024 * 1024; // 10MB
 function jsonBody(req: IncomingMessage): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    req.on("data", c => chunks.push(c));
+    let totalSize = 0;
+    req.on("data", c => {
+      totalSize += c.length;
+      if (totalSize > MAX_BODY_BYTES) {
+        req.destroy();
+        reject(new Error("Request body too large (max 10MB)"));
+        return;
+      }
+      chunks.push(c);
+    });
     req.on("end", () => {
       const raw = Buffer.concat(chunks).toString();
       try { resolve(raw ? JSON.parse(raw) : undefined); }
@@ -102,8 +112,9 @@ async function main() {
 
   // 4. 原生 HTTP server
   const httpServer = createServer(async (req, res) => {
-    // Rate limiting (按 IP)
-    const ip = req.socket.remoteAddress ?? "unknown";
+    // Rate limiting (按 IP, 支持反向代理)
+    const ip = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim()
+      ?? req.socket.remoteAddress ?? "unknown";
     if (rateLimited(ip)) {
       res.writeHead(429, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "Too many requests", retryAfterMs: RATE_WINDOW_MS }));
