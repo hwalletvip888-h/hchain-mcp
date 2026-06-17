@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.2.1 — 2026-06-17
+
+### Added
+- **Agent协作框架**: 10个专业Agent + 7个流水线命令 + 5个YAML工作流
+- `buildSwapPipeline()` 辅助函数: 提取报价→授权→构建→模拟公共流水线
+- `fetchPrice()` 辅助函数: 统一代币价格查询
+- `errMsg()` 辅助函数: 统一错误消息提取(替换30处重复代码)
+- 测试扩展: shared(52)、balance(11)、gateway(10)、trade(10) — 共83用例
+- GitHub Issue模板: 交易请求/代币调研/Bug报告
+- GitHub Actions: Agent触发器 workflow
+- 框架自检脚本 `validate.sh` (13项检查)
+- JSONL黑board共享内存机制
+- 工具→Agent分配矩阵 (109 tools全覆盖)
+
+### Fixed
+- Bug 1: Gas估算公式恒等式修复 (21000→65000 + 移除txValue/txValue)
+- Bug 2: price_alert targetPrice NaN校验缺失
+- Bug 3: Nonce管理器移除gasLimit错误调用
+- Bug 4: 貔貅检测双倍计分合并
+- W3: price_alert readOnlyHint 修正 (true→false)
+- W7: Nonce自动填充targetNonce
+- W8: nonce未知时返回null而非误导性字符串
+- S1: 30处 `e instanceof Error` → `errMsg(e)` 统一替换
+- S4: commonGasLimit常量 21000→65000
+
+### Changed
+- **help.ts 重写**: 13个Skill全列出、新手推荐路径、🔍/✍️标注
+- **README.md 重写**: 30秒上手、5分钟指南、痛点对比、FAQ
+- **CLAUDE.md**: 新增Agent协作框架章节
+- **shared.ts**: 新增errMsg()导出
+
 ## 1.2.0 — 2026-06-16
 
 ### Added

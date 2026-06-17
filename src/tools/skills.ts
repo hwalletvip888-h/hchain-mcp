@@ -34,6 +34,114 @@ function isNative(address: string): boolean {
   return NATIVE_ADDR.has(address) || NATIVE_ADDR.has(address.toLowerCase());
 }
 
+// ── fetchPrice ─────────────────────────────────────────────────
+/** 查询代币美元价格，失败返回 0 不抛异常 */
+async function fetchPrice(auth: Auth, chainIndex: string, tokenContractAddress: string): Promise<number> {
+  try {
+    const priceR = await marketApi.price(auth, [{ chainIndex, tokenContractAddress }]);
+    const r = Array.isArray(priceR) ? priceR[0] : priceR;
+    return parseFloat((r as any)?.usdPrice ?? (r as any)?.price ?? "0");
+  } catch { return 0; }
+}
+
+// ── buildSwapPipeline ──────────────────────────────────────────
+// FIX Bug 5: 提取 Skill 1/7/10 中重复的报价→授权→构建→模拟流水线
+interface SwapPipelineResult {
+  steps: StepResult[];
+  swapRaw: any;
+  swapTx: ReturnType<typeof extractTxFields> | null;
+  swapParams: Record<string, string>;
+  warnings: string[];
+  isReady: boolean;
+  failedAt?: string;
+}
+
+async function buildSwapPipeline(
+  auth: Auth,
+  params: {
+    chainIndex: string; fromTokenAddress: string; toTokenAddress: string;
+    amount: string; userWalletAddress: string; slippagePercent?: string;
+    gasLevel?: string; swapMode?: string;
+    extraQuoteParams?: Record<string, string>;
+    extraSwapParams?: Record<string, string>;
+    skipApprove?: boolean;
+  },
+): Promise<SwapPipelineResult> {
+  const steps: StepResult[] = [];
+  const warnings: string[] = [];
+  const { chainIndex, fromTokenAddress, toTokenAddress, amount, userWalletAddress, slippagePercent } = params;
+
+  // Step 1: Quote
+  try {
+    const qParams: Record<string, string> = {
+      chainIndex, fromTokenAddress, toTokenAddress, amount,
+      swapMode: params.swapMode ?? "exactIn",
+      ...params.extraQuoteParams,
+    };
+    const quoteR = await tradeApi.quote(auth, qParams);
+    steps.push({ step: "quote", status: "ok", data: { priceImpactPercent: (quoteR as any).priceImpactPercent, estimateGasFee: (quoteR as any).estimateGasFee } });
+  } catch (e) {
+    steps.push({ step: "quote", status: "error", error: errMsg(e) });
+    return { steps, swapRaw: null, swapTx: null, swapParams: {}, warnings, isReady: false, failedAt: "quote" };
+  }
+
+  // Step 2: Approve (仅 ERC20 需要)
+  const needApprove = !params.skipApprove && !isNative(fromTokenAddress);
+  let approveOk = false;
+  if (needApprove) {
+    try {
+      const approveR = await tradeApi.approveTransaction(auth, chainIndex, fromTokenAddress, amount);
+      const approveTxHash = (approveR as any)?.txHash ?? (approveR as any)?.hash;
+      steps.push({ step: "approve", status: "ok", data: { tokenContractAddress: fromTokenAddress, approveAmount: amount, txHash: approveTxHash } });
+      approveOk = true;
+    } catch (e) {
+      const msg = errMsg(e);
+      steps.push({ step: "approve", status: "error", error: msg });
+      warnings.push(`授权失败, 跳过授权继续: ${msg}`);
+    }
+  } else {
+    steps.push({ step: "approve", status: "skipped", warning: params.skipApprove ? "已跳过授权" : "主链币无需授权" });
+  }
+
+  // Step 3: Build Swap
+  let swapRaw: any = null;
+  const sParams: Record<string, string> = {
+    chainIndex, fromTokenAddress, toTokenAddress, amount,
+    userWalletAddress, slippagePercent: slippagePercent ?? "1.0",
+    ...params.extraSwapParams,
+  };
+  if (params.gasLevel) sParams.gasLevel = params.gasLevel;
+  if (approveOk) { sParams.approveTransaction = "true"; sParams.approveAmount = amount; }
+
+  try {
+    swapRaw = await tradeApi.swap(auth, sParams);
+    const tx = extractTxFields(swapRaw);
+    steps.push({ step: "swap", status: "ok", data: { to: tx.to, dataLen: tx.data?.length ?? 0, value: tx.value, gasPrice: tx.gasPrice, gas: tx.gas } });
+  } catch (e) {
+    steps.push({ step: "swap", status: "error", error: errMsg(e) });
+    return { steps, swapRaw: null, swapTx: null, swapParams: sParams, warnings, isReady: false, failedAt: "swap" };
+  }
+
+  // Step 4: Simulate
+  const swapTx = extractTxFields(swapRaw);
+  try {
+    const simR = await gatewayApi.simulate(auth, {
+      fromAddress: userWalletAddress, toAddress: swapTx.to, chainIndex,
+      txAmount: swapTx.value, extJson: { inputData: swapTx.data },
+    });
+    steps.push({ step: "simulate", status: "ok", data: simR });
+  } catch (e) {
+    const msg = errMsg(e);
+    steps.push({ step: "simulate", status: "error", error: msg });
+    warnings.push(`模拟执行失败: ${msg}。广播前请手动调用 onchainos_gateway_simulate 确认`);
+  }
+
+  const okCount = steps.filter(s => s.status === "ok" || s.status === "skipped").length;
+  const isReady = steps.every(s => s.status !== "error" || s.step === "approve");
+
+  return { steps, swapRaw, swapTx, swapParams: sParams, warnings, isReady };
+}
+
 // ── 内部类型 ────────────────────────────────────────────────
 
 interface StepResult<T = unknown> {
