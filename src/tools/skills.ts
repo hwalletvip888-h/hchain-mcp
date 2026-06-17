@@ -181,13 +181,13 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
       chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana。⚠️ 不确定先调 onchainos_dex_supported_chain 获取可用链列表"),
       fromTokenAddress: z.string().describe("卖出代币合约地址(小写)。主链币传空字符串''。⚠️ 不知道地址 → 先调 onchainos_token_search 搜索代币"),
       toTokenAddress: z.string().describe("买入代币合约地址(小写)。⚠️ 不知道地址 → 先调 onchainos_token_search 搜索代币"),
-      amount: z.string().describe(
+      amount: z.string().regex(/^[0-9]+$/, "amount 必须是正整数字符串(含精度)").describe(
         "卖出数量(最小单位, 含精度 decimals)。" +
         "⚠️ 不同代币精度不同: USDT(decimals=6)'1'=1000000, SOL(decimals=9)'1'=1000000000, ETH(decimals=18)'1'=1000000000000000000。" +
         "公式: amount = 人类可读数量 × 10^decimals。不确定 decimals 先调 onchainos_token_basic_info"
       ),
       userWalletAddress: z.string().describe("用户钱包地址"),
-      slippagePercent: z.string().optional().default("1.0").describe("滑点百分比, 默认1.0。建议从 onchainos_skill_smart_slippage 获取"),
+      slippagePercent: z.string().optional().default("1.0").refine(v => { const n = parseFloat(v); return !isNaN(n) && n >= 0.1 && n <= 50; }, "滑点范围 0.1~50%").describe("滑点百分比, 默认1.0。建议从 onchainos_skill_smart_slippage 获取"),
       gasLevel: z.enum(["slow","average","fast"]).optional().describe("Gas等级, 默认average"),
     },
     { readOnlyHint: false, idempotentHint: false, destructiveHint: true },
@@ -1127,12 +1127,19 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
         else steps.push({ step: "unknown", status: "error" as const, error: r.reason?.message ?? String(r.reason) });
       }
 
-      // 提取分析数据
-      const sentiment = sentimentR.status === "fulfilled" ? (sentimentR.value.data ?? sentimentR.value) as any : null;
-      const vibe = vibeR.status === "fulfilled" ? (vibeR.value.data ?? vibeR.value) as any : null;
-      const news = newsR.status === "fulfilled" ? (newsR.value.data ?? newsR.value) as any : null;
-      const kols = kolsR.status === "fulfilled" ? (kolsR.value.data ?? kolsR.value) as any : null;
-      const ranking = rankingR.status === "fulfilled" ? (rankingR.value.data ?? rankingR.value) as any : null;
+      // 提取分析数据 (FIX S3: 类型安全)
+      const extract = <T,>(r: PromiseSettledResult<{ step: string; status: "ok"; data: unknown }>): T | null =>
+        r.status === "fulfilled" ? (r.value.data as T) : null;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const sentiment = extract<any>(sentimentR);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const vibe = extract<any>(vibeR);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const news = extract<any>(newsR);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const kols = extract<any>(kolsR);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const ranking = extract<any>(rankingR);
 
       // 找排位
       let rankPosition: number | null = null;
@@ -1392,9 +1399,9 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
 
       // Step 3: 连接 WS
       try {
-        const { wsConnect } = await import("../adapters/onchainos-ws.js");
-        const connId = await wsConnect(auth);
-        await (await import("../adapters/onchainos-ws.js")).wsSubscribe({ channel: "price", chainIndex, tokenContractAddress });
+        const wsMod = await import("../adapters/onchainos-ws.js"); // FIX W5: 合并重复import
+        const connId = await wsMod.wsConnect(auth);
+        await wsMod.wsSubscribe({ channel: "price", chainIndex, tokenContractAddress });
         steps.push({ step: "ws_setup", status: "ok", data: { connId, channel: "price" } });
       } catch (e) {
         steps.push({ step: "ws_setup", status: "error", error: errMsg(e) });

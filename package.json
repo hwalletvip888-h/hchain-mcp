@@ -37,13 +37,7 @@
     "trading",
     "multi-chain",
     "ai-agent",
-    "blockchain",
-    "defi",
-    "dex",
-    "swap",
-    "cross-chain",
-    "solana",
-    "ethereum"
+    "blockchain"
   ],
   "scripts": {
     "build": "tsc",
