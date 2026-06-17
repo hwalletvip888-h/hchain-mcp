@@ -1,6 +1,6 @@
 {
   "name": "hchain-skills",
-  "version": "1.4.0",
+  "version": "1.4.2",
   "description": "hchain-skills — AI-native multi-chain trading MCP Server (109 tools / 13 composite skills, beyond official OnchainOS)",
   "type": "module",
   "main": "dist/index.js",
