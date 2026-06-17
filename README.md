@@ -1,7 +1,7 @@
 # 🚀 hchain-mcp / hchain-skills
 
-[![npm version](https://img.shields.io/npm/v/hchain-skills?style=flat-square)](https://www.npmjs.com/package/hchain-skills)
-[![npm version](https://img.shields.io/npm/v/hchain-mcp?style=flat-square&label=hchain-mcp)](https://www.npmjs.com/package/hchain-mcp)
+[![npm (hchain-skills)](https://img.shields.io/npm/v/hchain-skills?style=flat-square&label=hchain-skills)](https://www.npmjs.com/package/hchain-skills)
+[![npm (hchain-mcp)](https://img.shields.io/npm/v/hchain-mcp?style=flat-square&label=hchain-mcp)](https://www.npmjs.com/package/hchain-mcp)
 [![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen?style=flat-square)](https://nodejs.org)
 [![License](https://img.shields.io/npm/l/hchain-skills?style=flat-square)](LICENSE)
 
