@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.4.0 — 2026-06-17
+
+### Added
+- **13 个独立 Skill**: `skills/` 目录，按官方 SKILL.md 格式，`hchain-` 统一前缀
+  - `hchain-trade-pipeline` — 报价→授权→构建→模拟→签名→广播
+  - `hchain-risk-detect` — 4维风险评分 0-100
+  - `hchain-smart-slippage` — 波动率+价格影响→三档滑点
+  - `hchain-signal-aggregate` — 信号→去重→批量风控→安全信号
+  - `hchain-market-overview` — 价格+K线+安全+情绪一站式
+  - `hchain-crosschain-swap` — Intent/Direct 双模式跨链
+  - `hchain-conditional-order` — 限价/止损条件自动触发
+  - `hchain-tx-accelerator` — pending诊断+RBF加速/取消
+  - `hchain-social-narrative` — 5维并行(情绪+热度+KOL+新闻+排行)
+  - `hchain-batch-swap` — 1-10笔批量兑换
+  - `hchain-nonce-manager` — EVM nonce诊断+覆盖
+  - `hchain-price-alert` — WS实时价格监控+触发
+  - `hchain-gas-configurator` — EIP-1559三档Gas推荐
+- 支持 `npx skills add hwalletvip888-h/hchain-mcp` 按需安装
+
 ## 1.3.0 — 2026-06-17
 
 ### Changed
