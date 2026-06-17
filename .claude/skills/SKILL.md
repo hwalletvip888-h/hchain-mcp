@@ -1,6 +1,6 @@
 ---
 name: hchain-skills
-description: hchain Agent协作框架 — 多Agent编排 + YAML工作流 + JSONL黑board
+description: hchain 链上赚币 — 多Agent编排 + YAML工作流 + JSONL黑board
 version: "1.0"
 activation:
   - "交易"
@@ -16,7 +16,7 @@ activation:
   - "workflow"
 ---
 
-# 🎯 hchain Agent协作框架
+# 🎯 hchain 链上赚币
 
 ## 框架架构
 

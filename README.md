@@ -118,7 +118,7 @@ npm install -g hchain-skills
 
 ---
 
-## 🏗️ Agent 协作框架
+## 🏗️ 链上赚币
 
 hchain-skills 内置 10 个专业 Agent，自动协作处理复杂任务：
 

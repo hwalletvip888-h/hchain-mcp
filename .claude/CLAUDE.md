@@ -1,10 +1,10 @@
 # hchain-skills — Agent 操作指南
 
-> 版本 2.3 · 专属 Agent 的链上全功能 MCP · 109 tools（含 13 个组合技能）+ **Agent协作框架：10 Agent + 7 命令 + 2 工作流**，超越官方 OnchainOS
+> 版本 2.3 · 专属 Agent 的链上全功能 MCP · 109 tools（含 13 个组合技能）+ **链上赚币：10 Agent + 7 命令 + 2 工作流**，超越官方 OnchainOS
 
 ---
 
-## 🤖 Agent 协作框架（NEW v2.3）
+## 🤖 链上赚币（NEW v2.3）
 
 ### 架构概览
 
