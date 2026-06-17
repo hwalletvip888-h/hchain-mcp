@@ -216,7 +216,8 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
       if (needApprove) {
         try {
           const approveR = await tradeApi.approveTransaction(auth, chainIndex, fromTokenAddress, amount);
-          steps.push({ step: "approve", status: "ok", data: { tokenContractAddress: fromTokenAddress, approveAmount: amount } });
+          const approveTxHash = (approveR as any)?.txHash ?? (approveR as any)?.hash; // FIX W1: 记录授权txHash
+          steps.push({ step: "approve", status: "ok", data: { tokenContractAddress: fromTokenAddress, approveAmount: amount, txHash: approveTxHash } });
           approveOk = true;
         } catch (e) {
           const msg = errMsg(e);
@@ -229,6 +230,7 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
 
       // Step 3: Build Swap
       let swapRaw: any;
+      let swapTx: ReturnType<typeof extractTxFields> | null = null; // FIX W6: 提升作用域, 避免Simulate重复调用
       try {
         const sParams: Record<string, string> = {
           chainIndex, fromTokenAddress, toTokenAddress, amount,
@@ -240,15 +242,14 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
           sParams.approveAmount = amount;
         }
         swapRaw = await tradeApi.swap(auth, sParams);
-        const tx = extractTxFields(swapRaw);
-        steps.push({ step: "swap", status: "ok", data: { to: tx.to, dataLen: tx.data?.length ?? 0, value: tx.value, gasPrice: tx.gasPrice, gas: tx.gas } });
+        swapTx = extractTxFields(swapRaw); // FIX W6: 提前到此处, 避免Simulate阶段重复调用
+        steps.push({ step: "swap", status: "ok", data: { to: swapTx.to, dataLen: swapTx.data?.length ?? 0, value: swapTx.value, gasPrice: swapTx.gasPrice, gas: swapTx.gas } });
       } catch (e) {
         steps.push({ step: "swap", status: "error", error: errMsg(e) });
         return toResult({ steps, summary: { status: "failed", failedAt: "swap", reason: "构建交易失败, 无法继续" } }, { warnings });
       }
 
       // Step 4: Simulate
-      const swapTx = extractTxFields(swapRaw);
       try {
         const simR = await gatewayApi.simulate(auth, {
           fromAddress: userWalletAddress,
@@ -543,22 +544,26 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
       type RiskCache = Record<string, any>;
       const riskCache: RiskCache = {};
       const chunkSize = 5;
-      for (let i = 0; i < tokensToCheck.length; i += chunkSize) {
-        const chunk = tokensToCheck.slice(i, i + chunkSize);
-        const chunkResults = await Promise.allSettled(
-          chunk.map(async (t) => {
-            const info = await marketApi.tokenAdvancedInfo(auth, t.chainIndex, t.tokenContractAddress);
-            const key = `${t.chainIndex}:${t.tokenContractAddress}`;
-            return { key, info };
-          }),
-        );
-        for (const r of chunkResults) {
-          if (r.status === "fulfilled") {
-            riskCache[r.value.key] = r.value.info;
+      try { // FIX W4: 外层try/catch防止Promise.allSettled运行时异常
+        for (let i = 0; i < tokensToCheck.length; i += chunkSize) {
+          const chunk = tokensToCheck.slice(i, i + chunkSize);
+          const chunkResults = await Promise.allSettled(
+            chunk.map(async (t) => {
+              const info = await marketApi.tokenAdvancedInfo(auth, t.chainIndex, t.tokenContractAddress);
+              const key = `${t.chainIndex}:${t.tokenContractAddress}`;
+              return { key, info };
+            }),
+          );
+          for (const r of chunkResults) {
+            if (r.status === "fulfilled") {
+              riskCache[r.value.key] = r.value.info;
+            }
           }
         }
+        steps.push({ step: "risk_filter", status: "ok", data: { tokensChecked: tokensToCheck.length, riskDataAvailable: Object.keys(riskCache).length } });
+      } catch (e) {
+        steps.push({ step: "risk_filter", status: "error", error: errMsg(e) });
       }
-      steps.push({ step: "risk_filter", status: "ok", data: { tokensChecked: tokensToCheck.length, riskDataAvailable: Object.keys(riskCache).length } });
 
       // Step 4: 过滤 + 排序
       const enriched = signals
