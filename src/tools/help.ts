@@ -57,16 +57,16 @@ export function registerHelpTools(server: McpServer, auth: Auth | null): void {
         ],
 
         // ═══════════════════════════════════════════
-        // 4. 斜杠命令
+        // 4. 用户可以输入的斜杠命令 (自然语言也能触发同样效果)
         commands: [
-          "/research 代币地址 — 深度调研 (行情+安全+社媒)",
-          "/trade 卖出 买入 数量 — 完整交易流水线",
+          "/research 代币地址 — 深度调研",
+          "/trade 卖出 买入 数量 — 完整交易",
           "/scan new|hot|smart — 全链扫描",
           "/monitor — 持仓总览",
           "/audit 代币地址 — 安全审计",
-          "/dispatch 任务描述 — 智能派发给Agent团队",
-          "/workflow 工作流名 — 运行YAML工作流",
+          "/dispatch 任务描述 — 智能派发",
         ],
+        hint: "以上命令也可以用自然语言替代，如'扫一下新币'等价于 /scan new",
 
         // ═══════════════════════════════════════════
         // 5. 重要规则
@@ -79,18 +79,16 @@ export function registerHelpTools(server: McpServer, auth: Auth | null): void {
         ],
 
         // ═══════════════════════════════════════════
-        // 6. Agent团队
-        agents: [
-          { name: "market-analyst", does: "行情·K线·代币", model: "Sonnet" },
+        // 6. 内部Agent团队 (自动协作, 用户无需手动调用)
+        internalAgents: [
+          { name: "orchestrator", does: "接收用户意图→分解任务→路由到专业Agent→汇总", model: "Opus" },
+          { name: "market-analyst", does: "行情·K线·代币信息", model: "Sonnet" },
           { name: "risk-assessor", does: "风险评分·安全审查", model: "Opus" },
           { name: "trade-executor", does: "交易构建·广播·追踪", model: "Sonnet" },
           { name: "portfolio-tracker", does: "余额·持仓·历史", model: "Haiku" },
           { name: "signal-scout", does: "信号·聪明钱·新币", model: "Sonnet" },
           { name: "defi-strategist", does: "DeFi理财·支付", model: "Sonnet" },
           { name: "social-analyst", does: "社媒·新闻·情绪", model: "Haiku" },
-          { name: "orchestrator", does: "任务分解·路由·汇总", model: "Opus" },
-          { name: "code-reviewer", does: "代码审查", model: "Opus" },
-          { name: "test-engineer", does: "测试运行", model: "Sonnet" },
         ],
       });
     },
