@@ -1,11 +1,13 @@
-# 🚀 hchain-skills
+# 🚀 hchain-mcp / hchain-skills
 
 [![npm version](https://img.shields.io/npm/v/hchain-skills?style=flat-square)](https://www.npmjs.com/package/hchain-skills)
+[![npm version](https://img.shields.io/npm/v/hchain-mcp?style=flat-square&label=hchain-mcp)](https://www.npmjs.com/package/hchain-mcp)
 [![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen?style=flat-square)](https://nodejs.org)
-[![CI](https://img.shields.io/github/actions/workflow/status/hwalletvip888-h/hchain-skills/ci.yml?style=flat-square)](https://github.com/hwalletvip888-h/hchain-skills/actions)
 [![License](https://img.shields.io/npm/l/hchain-skills?style=flat-square)](LICENSE)
 
 > **AI 原生多链交易 MCP Server** — 109 个工具，让 AI Agent 拥有链上超能力
+>
+> 📦 双包同源：`hchain-skills`（主力）· `hchain-mcp`（覆盖旧引用）—— 两个包内容完全一致
 
 ---
 
@@ -24,12 +26,13 @@
 ## ⚡ 30 秒开始
 
 ```bash
-# 1. 安装
-npm install -g hchain-skills
+# 1. 安装（二选一，内容一样）
+npm install -g hchain-skills    # 主力包
+npm install -g hchain-mcp       # 兼容旧引用
 
 # 2. 获取 API Key → https://web3.okx.com/onchainos/dev-portal
 
-# 3. 配置 Claude Code（复制到 ~/.claude/claude.json 或项目 .claude/settings.json）
+# 3. 配置 Claude Code
 ```
 
 ```json
