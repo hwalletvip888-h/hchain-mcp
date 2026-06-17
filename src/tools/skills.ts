@@ -942,69 +942,20 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
         });
       }
 
-      // ── Step 3: 条件触发 → 执行交易 ────────────────────
-      // 先报价
-      try {
-        const qParams: Record<string, string> = {
-          chainIndex, fromTokenAddress, toTokenAddress, amount,
-          swapMode: "exactIn",
-        };
-        const quoteR = await tradeApi.quote(auth, qParams);
-        steps.push({ step: "quote", status: "ok", data: { priceImpactPercent: (quoteR as any)?.priceImpactPercent } });
-      } catch (e) {
-        steps.push({ step: "quote", status: "error", error: errMsg(e) });
-        return toResult({ steps, summary: { status: "failed", failedAt: "quote", reason: "报价失败, 无法执行条件单" } }, { warnings });
-      }
+      // ── Step 3: 条件触发 → 执行交易流水线 (FIX Bug5: 复用buildSwapPipeline) ──
+      const pipeline = await buildSwapPipeline(auth, {
+        chainIndex, fromTokenAddress, toTokenAddress, amount,
+        userWalletAddress, slippagePercent,
+      });
+      steps.push(...pipeline.steps);
+      warnings.push(...pipeline.warnings);
 
-      // Approve (if needed)
-      const needApprove = !isNative(fromTokenAddress);
-      if (needApprove) {
-        try {
-          await tradeApi.approveTransaction(auth, chainIndex, fromTokenAddress, amount);
-          steps.push({ step: "approve", status: "ok", data: { tokenContractAddress: fromTokenAddress } });
-        } catch (e) {
-          const msg = errMsg(e);
-          steps.push({ step: "approve", status: "error", error: msg });
-          warnings.push(`授权失败, 跳过继续: ${msg}`);
-        }
-      } else {
-        steps.push({ step: "approve", status: "skipped", warning: "主链币无需授权" });
-      }
-
-      // Build swap
-      let swapRaw: any;
-      try {
-        const sParams: Record<string, string> = {
-          chainIndex, fromTokenAddress, toTokenAddress, amount,
-          userWalletAddress, slippagePercent,
-        };
-        if (needApprove) {
-          sParams.approveTransaction = "true";
-          sParams.approveAmount = amount;
-        }
-        swapRaw = await tradeApi.swap(auth, sParams);
-        const tx = extractTxFields(swapRaw);
-        steps.push({ step: "swap", status: "ok", data: { to: tx.to, dataLen: tx.data?.length ?? 0, value: tx.value } });
-      } catch (e) {
-        steps.push({ step: "swap", status: "error", error: errMsg(e) });
-        return toResult({ steps, summary: { status: "failed", failedAt: "swap", reason: "构建交易失败" } }, { warnings });
-      }
-
-      // Simulate
-      const swapTx = extractTxFields(swapRaw);
-      try {
-        await gatewayApi.simulate(auth, {
-          fromAddress: userWalletAddress,
-          toAddress: swapTx.to,
-          chainIndex,
-          txAmount: swapTx.value,
-          extJson: { inputData: swapTx.data },
-        });
-        steps.push({ step: "simulate", status: "ok", data: { success: true } });
-      } catch (e) {
-        const msg = errMsg(e);
-        steps.push({ step: "simulate", status: "error", error: msg });
-        warnings.push(`模拟执行失败: ${msg}`);
+      if (!pipeline.isReady) {
+        return toResult({
+          steps,
+          orderInfo: { orderType, currentPrice, targetPrice, deviationPercent: +deviationPercent.toFixed(2), status: "triggered" },
+          summary: { status: "failed", failedAt: pipeline.failedAt, reason: `交易流水线在 ${pipeline.failedAt} 阶段失败` },
+        }, { warnings: warnings.length ? warnings : undefined });
       }
 
       return toResult({
@@ -1015,8 +966,8 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
           executedAtPrice: currentPrice,
           status: "triggered",
         },
-        calldata: { to: swapTx.to, data: swapTx.data, value: swapTx.value, gasPrice: swapTx.gasPrice, gas: swapTx.gas },
-        signatureData: (swapRaw as any)?.signatureData,
+        calldata: { to: pipeline.swapTx!.to, data: pipeline.swapTx!.data, value: pipeline.swapTx!.value, gasPrice: pipeline.swapTx!.gasPrice, gas: pipeline.swapTx!.gas },
+        signatureData: pipeline.swapRaw?.signatureData,
         summary: {
           status: "triggered",
           message: `条件已触发! 当前价 $${currentPrice} 满足 ${orderType} 条件, 交易已构建`,
