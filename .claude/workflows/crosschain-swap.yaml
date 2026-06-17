@@ -1,0 +1,138 @@
+# hchain 跨链兑换流水线
+# 使用: /workflow crosschain-swap '{"from_token":"0x...","to_token":"0x...","amount":"100","from_chain":"1","to_chain":"42161","mode":"intent"}'
+
+name: crosschain-swap
+version: "1.0"
+description: 跨链原子交换 — 双链Gas+报价+风控+订单提交+追踪
+timeout_seconds: 900
+max_continuations: 3
+
+nodes:
+  # ===== 阶段 1: 双链并行准备 =====
+  - id: source-chain-info
+    agent: market-analyst
+    label: 源链信息
+    params:
+      chain: "{{args.from_chain}}"
+      token: "{{args.from_token}}"
+    parallel: true
+    depends_on: []
+    timeout: 45
+
+  - id: target-chain-info
+    agent: market-analyst
+    label: 目标链信息
+    params:
+      chain: "{{args.to_chain}}"
+      token: "{{args.to_token}}"
+    parallel: true
+    depends_on: []
+    timeout: 45
+
+  - id: source-gas
+    agent: trade-executor
+    label: 源链Gas
+    action: gas_price
+    params:
+      chain: "{{args.from_chain}}"
+    parallel: true
+    depends_on: []
+    timeout: 15
+
+  - id: target-gas
+    agent: trade-executor
+    label: 目标链Gas
+    action: gas_price
+    params:
+      chain: "{{args.to_chain}}"
+    parallel: true
+    depends_on: []
+    timeout: 15
+
+  # ===== 阶段 2: 跨链报价 (依赖双链信息) =====
+  - id: crosschain-quote
+    agent: trade-executor
+    label: 跨链报价
+    action: crosschain_swap
+    params:
+      mode: "{{args.mode}}"
+      from_token: "{{args.from_token}}"
+      to_token: "{{args.to_token}}"
+      amount: "{{args.amount}}"
+      from_chain: "{{args.from_chain}}"
+      to_chain: "{{args.to_chain}}"
+      source_gas: "{{source-gas}}"
+      target_gas: "{{target-gas}}"
+    depends_on: [source-chain-info, target-chain-info, source-gas, target-gas]
+    timeout: 90
+    validate:
+      - field: quote_received
+        rule: "equals true"
+    fallback:
+      on_fail: "retry_with_direct_mode"
+
+  # ===== 阶段 3: 安全检测 =====
+  - id: risk-check
+    agent: risk-assessor
+    label: 安全风控
+    params:
+      token_address: "{{args.to_token}}"
+      chain_index: "{{args.to_chain}}"
+    depends_on: [crosschain-quote]
+    timeout: 90
+    gate:
+      condition: "total_score < 71"
+      on_fail: "REJECT"
+      on_warn: "CONFIRM"
+
+  # ===== 阶段 4: 风控门禁 =====
+  - id: risk-gate
+    agent: orchestrator
+    label: 风控判决
+    action: evaluate
+    depends_on: [risk-check]
+    timeout: 10
+
+  # ===== 阶段 5: 人机确认 =====
+  - id: human-confirm
+    agent: orchestrator
+    label: 人机确认
+    action: request_confirmation
+    params:
+      swap_preview:
+        from: "{{args.amount}} on chain {{args.from_chain}}"
+        to: "{{crosschain-quote.estimated_output}} on chain {{args.to_chain}}"
+        mode: "{{args.mode}}"
+        estimated_time: "{{crosschain-quote.estimated_time}}"
+        total_gas_usd: "{{crosschain-quote.total_gas_usd}}"
+        risk_score: "{{risk-check.total_score}}"
+    depends_on: [risk-gate]
+    human_in_the_loop: true
+    timeout: 300
+
+  # ===== 阶段 6: 提交订单 (Intent) 或 广播 (Direct) =====
+  - id: submit-order
+    agent: trade-executor
+    label: 提交订单
+    action: "{{args.mode == 'intent' ? 'create_intent_order' : 'broadcast'}}"
+    params:
+      sign_data: "{{human-confirm.sign_data}}"
+      quote: "{{crosschain-quote}}"
+    depends_on: [human-confirm]
+    run_on: success
+    timeout: 120
+    retry: 3
+    retry_delay: 30
+
+  # ===== 阶段 7: 追踪 =====
+  - id: track-status
+    agent: trade-executor
+    label: 追踪状态
+    action: "{{args.mode == 'intent' ? 'intent_order_status' : 'gateway_orders'}}"
+    params:
+      order_id: "{{submit-order.order_id}}"
+      tx_hash: "{{submit-order.tx_hash}}"
+    depends_on: [submit-order]
+    timeout: 600
+    retry: 10
+    retry_delay: 30

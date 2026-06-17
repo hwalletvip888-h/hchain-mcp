@@ -1,0 +1,93 @@
+# ✅ hchain Agent 协作框架 — 就绪报告
+
+> 生成时间: 2026-06-17 | 版本: v2.3
+
+---
+
+## 🏗️ 框架组件
+
+| 组件 | 数量 | 状态 |
+|------|:---:|:---:|
+| **Agent 定义** | 10 | ✅ 全部就绪 |
+| **流水线命令** | 7 | ✅ 全部就绪 |
+| **YAML 工作流** | 5 | ✅ 全部就绪 |
+| **Skill 系统** | 1 入口 + 2 参考 | ✅ 全部就绪 |
+| **JSONL 黑board** | 1 | ✅ 正常运行 |
+| **GitHub Issue 模板** | 3 + config | ✅ 全部就绪 |
+| **GitHub Workflows** | 2 (CI + Agent触发) | ✅ 全部就绪 |
+
+## 🔍 验证结果
+
+| 检查项 | 结果 | 详情 |
+|------|:---:|------|
+| Agent frontmatter 完整性 | ✅ | 10/10 name+description+model+tools |
+| Agent 模型分配 | ✅ | 3 Opus + 5 Sonnet + 2 Haiku |
+| Command frontmatter | ✅ | 7/7 name+description |
+| YAML 格式 | ✅ | 5/5 可解析 |
+| YAML DAG 依赖 | ✅ | 无循环依赖 |
+| MCP 工具覆盖 | ✅ | 109/109 tools 已分配 |
+| MCP Server 构建 | ✅ | dist/index.js 存在 |
+| JSONL Bus | ✅ | 初始化+2条完成事件 |
+| GitHub 模板 | ✅ | trade/research/bug + config |
+| GitHub Actions | ✅ | CI + Agent触发 |
+
+## 🗺️ Agent 架构
+
+```
+                      ┌──────────────────────┐
+                      │   🎯 Orchestrator     │
+                      │   (Opus · 主编排)      │
+                      └──────┬───────────────┘
+           ┌─────────┬───────┼───────┬─────────┬──────────┐
+           ▼         ▼       ▼       ▼         ▼          ▼
+    ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐
+    │ Market  │ │  Risk   │ │  Trade  │ │Portfolio│ │ Signal  │
+    │Analyst  │ │Assessor │ │Executor │ │Tracker  │ │ Scout   │
+    │(Sonnet) │ │ (Opus)  │ │(Sonnet) │ │(Haiku)  │ │(Sonnet) │
+    └─────────┘ └─────────┘ └─────────┘ └─────────┘ └─────────┘
+           ▼         ▼       ▼       ▼         ▼          ▼
+    ┌─────────┐ ┌─────────┐ ┌─────────┐
+    │  DeFi   │ │ Social  │ │  Code   │  ← 辅助Agent
+    │Strategist│ │Analyst  │ │Reviewer │
+    │(Sonnet) │ │(Haiku)  │ │ (Opus)  │
+    └─────────┘ └─────────┘ └─────────┘
+                          
+              .claude/memory/bus.jsonl
+              (JSONL 共享黑board)
+```
+
+## 🔗 工作流清单
+
+| # | 工作流 | 文件 | 节点 | 执行时间(估) | 用途 |
+|:---:|------|------|:---:|:---:|------|
+| 1 | trade-pipeline | trade-pipeline.yaml | 8 | ~3min | 完整代币兑换 |
+| 2 | research-pipeline | research-pipeline.yaml | 5 | ~2min | 代币深度调研 |
+| 3 | crosschain-swap | crosschain-swap.yaml | 7 | ~5min | 跨链原子交换 |
+| 4 | portfolio-audit | portfolio-audit.yaml | 5 | ~3min | 全链持仓审计 |
+| 5 | signal-pipeline | signal-pipeline.yaml | 5 | ~3min | 信号→交易 |
+
+## 🚀 快速开始
+
+```bash
+# 1. 框架自检
+bash .claude/skills/references/validate.sh
+
+# 2. 构建 MCP Server
+npm run build
+
+# 3. 在 Claude Code 中使用
+/dispatch "调研 0xABC 代币"
+/trade 0xA 0xB 100
+/scan new
+/monitor
+/audit portfolio
+/workflow signal-pipeline '{"chains":["1","56"]}'
+```
+
+## 📋 后续可扩展
+
+- [ ] 工具覆盖审计报告 (tool-matrix.md) — Agent 2 处理中
+- [ ] 运行时端到端测试 — 需要实际的 MCP 连接
+- [ ] Agent 性能基准测试 — Token消耗/响应时间
+- [ ] 动态工作流生成 — 自然语言→YAML DAG
+- [ ] 多模型成本优化 — 按任务复杂度自动选择模型

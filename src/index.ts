@@ -1,47 +1,65 @@
+#!/usr/bin/env node
+
 /**
- * H-MCP — Onchain OS MCP Server
- * Phase 1: 全 API 对接
+ * hchain-skills Server — stdio 传输
+ * 规范: OnchainOS-API对接规范.md §五
  */
 import "dotenv/config";
+import { readFileSync } from "node:fs";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import type { Auth } from "./adapters/shared.js";
-import { registerMarketTools } from "./tools/market.js";
-import { registerTradeTools } from "./tools/trade.js";
+import { resolveAuth } from "./adapters/shared.js";
 import { registerBalanceTools } from "./tools/balance.js";
 import { registerGatewayTools } from "./tools/gateway.js";
-import { registerPaymentsTools } from "./tools/payments.js";
+import { registerTxHistoryTools } from "./tools/txhistory.js";
 import { registerDefiTools } from "./tools/defi.js";
+import { registerPaymentsTools } from "./tools/payments.js";
+import { registerTradeTools } from "./tools/trade.js";
+import { registerIntentTools } from "./tools/intent.js";
+import { registerMarketTools } from "./tools/market.js";
+import { registerWsTools } from "./tools/ws.js";
+import { registerSkillTools } from "./tools/skills.js";
+import { registerHelpTools } from "./tools/help.js";
 
-function resolveAuth(): Auth | null {
-  const k = process.env.OKX_API_KEY, s = process.env.OKX_SECRET_KEY, p = process.env.OKX_PASSPHRASE;
-  if (k && s && p) return { apiKey: k, secret: s, passphrase: p };
-  const a = process.argv.slice(2), g = (f: string) => { const i = a.indexOf(f); return i >= 0 ? a[i + 1] : undefined; };
-  const ka = g("--okx-api-key") ?? g("-k"), sa = g("--okx-secret") ?? g("-s"), pa = g("--okx-passphrase") ?? g("-p");
-  if (ka && sa && pa) return { apiKey: ka, secret: sa, passphrase: pa };
-  return null;
+const { version } = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf-8"),
+);
+
+function shutdown(signal: string) {
+  console.error(`[hchain-skills] 收到 ${signal}，优雅退出`);
+  process.exit(0);
 }
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
 
 async function main() {
   const auth = resolveAuth();
   if (!auth) {
-    console.error("[H-MCP] ⚠️ 未配置 API Key。请设置 OKX_API_KEY / OKX_SECRET_KEY / OKX_PASSPHRASE");
-    console.error("[H-MCP] 获取: https://web3.okx.com/onchainos/dev-portal");
+    console.error("[hchain-skills] 未配置 API Key。设置 OKX_API_KEY / OKX_SECRET_KEY / OKX_PASSPHRASE");
+    console.error("[hchain-skills] 获取: https://web3.okx.com/onchainos/dev-portal");
   } else {
-    console.error("[H-MCP] Auth 已配置");
+    console.error("[hchain-skills] Auth 已配置");
   }
 
-  const server = new McpServer({ name: "h-mcp", version: "0.1.0" });
-  registerMarketTools(server, auth);
-  registerTradeTools(server, auth);
+  const server = new McpServer({ name: "hchain-skills", version });
+
+  // 逐模块注册工具 (按官方文档对接)
   registerBalanceTools(server, auth);
   registerGatewayTools(server, auth);
-  registerPaymentsTools(server, auth);
+  registerTxHistoryTools(server, auth);
   registerDefiTools(server, auth);
+  registerPaymentsTools(server, auth);
+  registerTradeTools(server, auth);
+  registerIntentTools(server, auth);
+  registerMarketTools(server, auth);
+  registerWsTools(server, auth);
+  registerSkillTools(server, auth);
+  registerHelpTools(server, auth);
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("[H-MCP] 就绪 — Market | Trade | Balance | Gateway | Payments");
+  console.error("[hchain-skills] 就绪");
 }
 
-main().catch(e => { console.error("[H-MCP] 启动失败:", e); process.exit(1); });
+main().catch(e => { console.error("[hchain-skills] 启动失败:", e); process.exit(1); });

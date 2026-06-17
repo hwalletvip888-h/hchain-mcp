@@ -1,0 +1,95 @@
+# hchain 代币调研流水线
+# 使用: /workflow research-pipeline '{"token":"0x...","chain":"1"}'
+
+name: research-pipeline
+version: "1.0"
+description: 代币深度调研 — 并行行情+安全+社媒+信号 → 综合评级
+timeout_seconds: 300
+max_continuations: 2
+
+nodes:
+  # ===== 阶段 1: 4路并行数据收集 =====
+  - id: market-data
+    agent: market-analyst
+    label: 行情数据
+    params:
+      intent: "深度调研"
+      token: "{{args.token}}"
+      chain: "{{args.chain}}"
+    parallel: true
+    depends_on: []
+    timeout: 90
+
+  - id: risk-data
+    agent: risk-assessor
+    label: 风险数据
+    params:
+      token_address: "{{args.token}}"
+      chain_index: "{{args.chain}}"
+    parallel: true
+    depends_on: []
+    timeout: 120
+
+  - id: social-data
+    agent: social-analyst
+    label: 社媒数据
+    params:
+      token: "{{args.token}}"
+    parallel: true
+    depends_on: []
+    timeout: 60
+
+  - id: signal-data
+    agent: signal-scout
+    label: 信号数据
+    params:
+      token: "{{args.token}}"
+      chain: "{{args.chain}}"
+    parallel: true
+    depends_on: []
+    timeout: 60
+
+  # ===== 阶段 2: 综合评级 =====
+  - id: aggregate
+    agent: orchestrator
+    label: 综合评级
+    action: aggregate
+    depends_on: [market-data, risk-data, social-data, signal-data]
+    timeout: 30
+    output_template: |
+      # 📊 {{market-data.token.symbol}} 深度调研报告
+
+      ## 基本信息
+      - 名称: {{market-data.token.name}}
+      - 合约: {{args.token}}
+      - 链: {{market-data.token.chain}}
+
+      ## 行情分析
+      - 当前价: ${{market-data.price.current}}
+      - 24h 涨跌: {{market-data.price.change_24h}}%
+      - K线趋势: {{market-data.candles.trend}}
+      - 支撑位: ${{market-data.candles.support}}
+      - 阻力位: ${{market-data.candles.resistance}}
+      - 总流动性: ${{market-data.liquidity.total_usd}}
+
+      ## 风险评分: {{risk-data.total_score}}/100 — {{risk-data.level}}
+      | 维度 | 评分 | 详情 |
+      |------|:---:|------|
+      | 合约安全 | {{risk-data.breakdown.contract_security.score}} | {{risk-data.breakdown.contract_security.issues}} |
+      | 流动性 | {{risk-data.breakdown.liquidity.score}} | LP锁定:{{risk-data.breakdown.liquidity.locked}} |
+      | 持仓分布 | {{risk-data.breakdown.holder_distribution.score}} | 前10占比:{{risk-data.breakdown.holder_distribution.top10_pct}}% |
+      | 交易行为 | {{risk-data.breakdown.trading_behavior.score}} | Bundle:{{risk-data.breakdown.trading_behavior.bundle_detected}} |
+
+      ## 社媒情绪
+      - 情绪分: {{social-data.sentiment.score}}
+      - 等级: {{social-data.sentiment.level}}
+      - 趋势: {{social-data.sentiment.trend}}
+      - 热门话题: {{social-data.hot_topics}}
+      - KOL 提及: {{social-data.kol_mentions}}
+
+      ## 聪明钱信号
+      - 信号强度: {{signal-data.signals.0.strength}}
+      - 原因: {{signal-data.signals.0.reason}}
+
+      ## 🏆 综合评级: [RATING]
+      ## 💡 操作建议: [RECOMMENDATION]

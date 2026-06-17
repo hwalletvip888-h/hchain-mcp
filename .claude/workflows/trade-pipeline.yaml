@@ -1,0 +1,134 @@
+# hchain 交易流水线
+# 使用: /workflow trade-pipeline '{"from_token":"0x...","to_token":"0x...","amount":"100","chain":"1"}'
+
+name: trade-pipeline
+version: "1.0"
+description: 完整代币兑换流水线 — 风控→行情→报价→构建→模拟→广播→追踪
+timeout_seconds: 600
+max_continuations: 3
+
+nodes:
+  # ===== 阶段 1: 并行预备 =====
+  - id: risk-check
+    agent: risk-assessor
+    label: 安全风控
+    params:
+      token_address: "{{args.to_token}}"
+      chain_index: "{{args.chain}}"
+    parallel: true
+    depends_on: []
+    timeout: 120
+    validate:
+      - field: total_score
+        rule: "exists"
+
+  - id: market-check
+    agent: market-analyst
+    label: 行情确认
+    params:
+      from_token: "{{args.from_token}}"
+      to_token: "{{args.to_token}}"
+      chain_index: "{{args.chain}}"
+    parallel: true
+    depends_on: []
+    timeout: 60
+
+  - id: balance-check
+    agent: portfolio-tracker
+    label: 余额确认
+    params:
+      token: "{{args.from_token}}"
+      chain: "{{args.chain}}"
+    parallel: true
+    depends_on: []
+    timeout: 30
+
+  # ===== 阶段 2: 风控门禁 =====
+  - id: risk-gate
+    agent: orchestrator
+    label: 风控判决
+    action: evaluate
+    depends_on: [risk-check]
+    gate:
+      condition: "risk-check.total_score < 71"
+      on_fail: "REJECT"
+      on_warn: "CONFIRM"  # 51-70 分需用户确认
+      on_pass: "CONTINUE"
+    timeout: 10
+
+  # ===== 阶段 3: 交易构建 =====
+  - id: get-quote
+    agent: trade-executor
+    label: 获取报价
+    action: dex_quote
+    params:
+      from_token: "{{args.from_token}}"
+      to_token: "{{args.to_token}}"
+      amount: "{{args.amount}}"
+      chain: "{{args.chain}}"
+      slippage: "{{market-check.suggested_slippage}}"
+    depends_on: [risk-gate, market-check, balance-check]
+    timeout: 60
+
+  - id: check-approval
+    agent: trade-executor
+    label: 授权检查
+    action: check_approval
+    params:
+      token: "{{args.from_token}}"
+      amount: "{{args.amount}}"
+      chain: "{{args.chain}}"
+    depends_on: [get-quote]
+    timeout: 30
+
+  - id: build-simulate
+    agent: trade-executor
+    label: 构建+模拟
+    action: trade_pipeline
+    params:
+      from_token: "{{args.from_token}}"
+      to_token: "{{args.to_token}}"
+      amount: "{{args.amount}}"
+      quote: "{{get-quote}}"
+      approval: "{{check-approval}}"
+    depends_on: [check-approval]
+    timeout: 120
+    validate:
+      - field: simulation_passed
+        rule: "equals true"
+
+  # ===== 阶段 4: 人机确认 =====
+  - id: human-confirm
+    agent: orchestrator
+    label: 人机确认
+    action: request_confirmation
+    params:
+      trade_preview: "{{build-simulate}}"
+    depends_on: [build-simulate]
+    human_in_the_loop: true
+    timeout: 300  # 5分钟等待用户确认
+
+  # ===== 阶段 5: 广播 =====
+  - id: broadcast
+    agent: trade-executor
+    label: 广播交易
+    action: broadcast
+    params:
+      calldata: "{{build-simulate.calldata}}"
+      signature: "{{human-confirm.signature}}"
+    depends_on: [human-confirm]
+    run_on: success
+    timeout: 60
+
+  # ===== 阶段 6: 追踪 =====
+  - id: track
+    agent: trade-executor
+    label: 追踪确认
+    action: track_order
+    params:
+      tx_hash: "{{broadcast.tx_hash}}"
+      chain: "{{args.chain}}"
+    depends_on: [broadcast]
+    timeout: 300
+    retry: 5
+    retry_delay: 30

@@ -1,8 +1,8 @@
 /**
- * 行情模块 — CAT:[链上-行情]
- * 37 tools covering Market API v6
+ * Market 模块 — CAT:[链上-行情]
+ * 行情价格: supported_chain + price + trades + candles + historical_candles
+ * ⚠️ x402 付费接口 — 需钱包持有 X Layer 上 USDG/USDT0 并 EIP-3009 签名
  */
-
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { marketApi } from "../adapters/onchainos.js";
@@ -11,364 +11,582 @@ import type { Auth } from "../adapters/shared.js";
 
 export function registerMarketTools(server: McpServer, auth: Auth | null): void {
 
-  // ═════════════════════════════════════════════════════════
-  // 1.1 基础行情 (6) — 已对接
-  // ═════════════════════════════════════════════════════════
-
   server.tool("onchainos_market_supported_chain",
-    "CAT:[链上-行情] | ## 功能：获取行情 API 支持的链列表\n## 场景：查询行情数据前确认目标链是否可用\n## 关键词：行情, 链列表, market, supported chain\n## 参数：无\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：微小 ~2KB\n## 关联：本工具确认链 → onchainos_token_search 搜索代币",
-    {}, { readOnlyHint: true },
-    async () => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.supportedChain(auth)); } catch(e) { return toError(e); } },
-  );
-
-  server.tool("onchainos_token_search",
-    "CAT:[链上-行情] | ## 功能：跨链搜索代币\n## 场景：查找代币、验证合约地址\n## 关键词：搜索, 代币, search\n## 参数：\n##   - search: 关键词（名称/符号/地址）\n##   - chains: 链索引逗号分隔\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：中等 ~30KB\n## 关联：本工具搜索 → onchainos_token_basic_info 详情",
-    { search: z.string().min(2).describe("搜索关键词"), chains: z.string().optional().describe("链索引，逗号分隔") },
-    { readOnlyHint: true },
-    async ({ search, chains }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.searchToken(auth, search, chains)); } catch(e) { return toError(e); } },
+    "链上-行情 | 获取行情 API 支持的链列表【场景:查哪些链有行情API】",
+    { chainIndex: z.string().optional().describe("链ID(字符串), 可选过滤。不传返回所有链。常见值: '1'=ETH '56'=BSC '8453'=Base。40+链支持, 不确定传空全查") },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async ({ chainIndex }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.supportedChain(auth, chainIndex)); } catch(e) { return toError(e); } },
   );
 
   server.tool("onchainos_market_price",
-    "CAT:[链上-行情] | ## 功能：获取代币实时价格\n## 场景：查询币价、交易前比价\n## 关键词：价格, price, 行情\n## 参数：\n##   - chainIndex: 链索引\n##   - tokenAddress: 代币合约地址\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：微小 ~1KB\n## 关联：onchainos_token_search 搜索 → 本工具查价 → onchainos_dex_quote 报价",
-    { chainIndex: z.number().int().describe("链索引"), tokenAddress: z.string().describe("代币合约地址") },
-    { readOnlyHint: true },
-    async ({ chainIndex, tokenAddress }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.price(auth, chainIndex, tokenAddress)); } catch(e) { return toError(e); } },
-  );
-
-  server.tool("onchainos_market_candles",
-    "CAT:[链上-行情] | ## 功能：获取K线（实时1000根/完整历史）\n## 场景：走势分析、技术指标、回测\n## 关键词：K线, candlestick, OHLCV\n## 参数：\n##   - chainIndex: 链索引\n##   - tokenContractAddress: 代币合约地址\n##   - period: 1m/5m/15m/30m/1H/4H/1D/1W/1M\n##   - mode: live(默认)/history\n##   - after/before: 翻页时间\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：大 ~100KB\n## 关联：onchainos_market_price 查价 → 本工具看K线",
+    "链上-行情 | 批量获取代币最新价格【场景:查币价/ETH多少钱/代币当前价】",
     {
-      chainIndex: z.number().int().describe("链索引"),
-      tokenContractAddress: z.string().describe("代币合约地址"),
-      period: z.enum(["1m","5m","15m","30m","1H","4H","1D","1W","1M"]).describe("K线周期"),
-      mode: z.enum(["live","history"]).optional().default("live").describe("live=最近1000根, history=完整历史"),
-      after: z.string().optional().describe("起始时间ISO8601"),
-      before: z.string().optional().describe("结束时间ISO8601"),
-    }, { readOnlyHint: true },
-    async ({ chainIndex, tokenContractAddress, period, mode, after, before }) => {
+      tokens: z.array(z.object({
+        chainIndex: z.string().describe("链ID(字符串)。如 '1'=ETH '56'=BSC '501'=Solana。不确定先调 onchainos_market_supported_chain"),
+        tokenContractAddress: z.string().describe("代币合约地址(小写)。主链币传空字符串"),
+      })).min(1).max(100).describe("要查询的代币列表。每个元素指定链ID和代币地址"),
+    },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async ({ tokens }) => {
       if(!auth) return AUTH_REQUIRED("READ");
       try {
-        const data = mode === "history"
-          ? await marketApi.historicalCandles(auth, chainIndex, tokenContractAddress, period)
-          : await marketApi.candles(auth, chainIndex, tokenContractAddress, period, after, before);
-        return toResult(data);
+        return toResult(await marketApi.price(auth, tokens));
       } catch(e) { return toError(e); }
     },
   );
 
-  server.tool("onchainos_token_basic_info",
-    "CAT:[链上-行情] | ## 功能：获取代币基本信息（名称/符号/精度）\n## 场景：验证代币元数据\n## 关键词：代币信息, token info\n## 参数：\n##   - chainIndex: 链索引\n##   - tokenAddress: 代币合约地址\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：微小 ~2KB\n## 关联：onchainos_token_search 搜索 → 本工具查详情",
-    { chainIndex: z.number().int().describe("链索引"), tokenAddress: z.string().describe("代币合约地址") },
-    { readOnlyHint: true },
-    async ({ chainIndex, tokenAddress }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.tokenBasicInfo(auth, chainIndex, tokenAddress)); } catch(e) { return toError(e); } },
+  server.tool("onchainos_market_candles",
+    "链上-行情 | 获取 K 线 OHLCV 数据【场景:看走势图/价格趋势/K线分析】",
+    {
+      chainIndex: z.string().describe("链ID(字符串)。如 '1'=ETH '56'=BSC '501'=Solana。⚠️ 不确定先调 onchainos_market_supported_chain"),
+      tokenContractAddress: z.string().describe("代币合约地址(小写)"),
+      bar: z.string().optional().describe("时间粒度: 1s/1m/3m/5m/15m/30m/1H/2H/4H/6H/12H/1D/1W/1M/3M。UTC: 6Hutc/12Hutc/1Dutc/1Wutc/1Mutc/3Mutc。默认1m"),
+      after: z.string().optional().describe("请求此时间戳之前(更旧)的数据"),
+      before: z.string().optional().describe("请求此时间戳之后(更新)的数据"),
+      limit: z.string().optional().describe("返回条数, 最大299, 默认100"),
+    },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async ({ chainIndex, tokenContractAddress, bar, after, before, limit }) => {
+      if(!auth) return AUTH_REQUIRED("READ");
+      try { return toResult(await marketApi.candles(auth, { chainIndex, tokenContractAddress, bar, after, before, limit })); } catch(e) { return toError(e); }
+    },
   );
 
-  // ═════════════════════════════════════════════════════════
-  // 1.2 批量行情 (2)
-  // ═════════════════════════════════════════════════════════
-
-  server.tool("onchainos_market_price_info",
-    "CAT:[链上-行情] | ## 功能：批量获取多代币在某链上的实时价格\n## 场景：一次查询多个代币价格\n## 关键词：批量价格, price info, 多代币\n## 参数：\n##   - chainIndex: 链索引\n##   - tokenAddresses: 代币合约地址列表（逗号分隔）\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：中等 ~10KB\n## 关联：onchainos_token_search 搜索 → 本工具批量查价",
+  server.tool("onchainos_market_historical_candles",
+    "链上-行情 | 获取历史 K 线(仅已完结)【场景:查历史走势/超过3个月的K线】",
     {
-      chainIndex: z.number().int().describe("链索引"),
-      tokenAddresses: z.string().describe("代币合约地址列表，逗号分隔"),
+      chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"),
+      tokenContractAddress: z.string().describe("代币合约地址(小写)"),
+      bar: z.string().optional().describe("时间粒度"),
+      after: z.string().optional().describe("更旧数据的时间戳"),
+      before: z.string().optional().describe("更新数据的时间戳"),
+      limit: z.string().optional().describe("返回条数, 最大299"),
     },
-    { readOnlyHint: true },
-    async ({ chainIndex, tokenAddresses }) => {
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async ({ chainIndex, tokenContractAddress, bar, after, before, limit }) => {
       if(!auth) return AUTH_REQUIRED("READ");
-      try { return toResult(await marketApi.priceInfo(auth, { chainIndex, tokenAddresses })); } catch(e) { return toError(e); }
+      try { return toResult(await marketApi.historicalCandles(auth, { chainIndex, tokenContractAddress, bar, after, before, limit })); } catch(e) { return toError(e); }
     },
   );
 
   server.tool("onchainos_market_trades",
-    "CAT:[链上-行情] | ## 功能：获取代币在指定链上的交易记录\n## 场景：查看代币交易活动、价格发现\n## 关键词：交易记录, trades, 成交\n## 参数：\n##   - chainIndex: 链索引\n##   - tokenContractAddress: 代币合约地址\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：中等 ~30KB\n## 关联：onchainos_market_price 查价 → 本工具看成交记录",
+    "链上-行情 | 获取代币 DEX 交易活动【场景:查代币的买卖交易/谁在交易】",
     {
-      chainIndex: z.number().int().describe("链索引"),
-      tokenContractAddress: z.string().describe("代币合约地址"),
+      chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"),
+      tokenContractAddress: z.string().describe("代币合约地址(小写)"),
+      tagFilter: z.string().optional().describe("地址标签: 1=KOL 2=Dev 3=聪明钱 4=鲸鱼 5=新钱包 6=老鼠仓 7=狙击手 8=疑似钓鱼 9=捆绑交易"),
+      walletAddressFilter: z.string().optional().describe("查询指定地址, 逗号分隔, 最多10个"),
+      after: z.string().optional().describe("分页游标(交易id)"),
+      limit: z.string().optional().describe("条数, 最大500, 默认100"),
     },
-    { readOnlyHint: true },
-    async ({ chainIndex, tokenContractAddress }) => {
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async (params) => {
       if(!auth) return AUTH_REQUIRED("READ");
-      try { return toResult(await marketApi.trades(auth, chainIndex, tokenContractAddress)); } catch(e) { return toError(e); }
+      try { return toResult(await marketApi.trades(auth, params as any)); } catch(e) { return toError(e); }
     },
   );
 
-  // ═════════════════════════════════════════════════════════
-  // 1.3 代币分析 (6)
-  // ═════════════════════════════════════════════════════════
+  server.tool("onchainos_token_price_info",
+    "链上-行情 | 批量获取代币交易信息(价格/涨跌幅/市值)【场景:全面了解代币行情/市值】",
+    {
+      tokens: z.array(z.object({
+        chainIndex: z.string().describe("链ID(字符串)。如 '1'=ETH '501'=Solana。不确定先调 onchainos_market_supported_chain"),
+        tokenContractAddress: z.string().describe("代币合约地址(小写)"),
+      })).min(1).max(100).describe("要查询的代币列表, 最多100个"),
+    },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async ({ tokens }) => {
+      if(!auth) return AUTH_REQUIRED("READ");
+      try { return toResult(await marketApi.priceInfo(auth, tokens)); } catch(e) { return toError(e); }
+    },
+  );
 
   server.tool("onchainos_token_advanced_info",
-    "CAT:[链上-行情] | ## 功能：获取代币高级信息（社交/合约安全等）\n## 场景：深度分析代币\n## 关键词：高级信息, advanced, 代币分析\n## 参数：\n##   - chainIndex: 链索引\n##   - tokenContractAddress: 代币合约地址\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：微小 ~2KB\n## 关联：onchainos_token_basic_info 基本信息 → 本工具高级信息",
-    { chainIndex: z.number().int().describe("链索引"), tokenContractAddress: z.string().describe("代币合约地址") },
-    { readOnlyHint: true },
-    async ({ chainIndex, tokenContractAddress }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.tokenAdvancedInfo(auth, chainIndex, tokenContractAddress)); } catch(e) { return toError(e); } },
+    "链上-行情 | 获取代币安全分析(貔貅检测)【场景:查是不是貔貅盘/安全检测】",
+    {
+      chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"),
+      tokenContractAddress: z.string().describe("代币合约地址(小写)。主链币传空字符串 ''。⚠️ 不知道地址 → 先调 onchainos_token_search"),
+    },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async ({ chainIndex, tokenContractAddress }) => {
+      if(!auth) return AUTH_REQUIRED("READ");
+      try {
+        return toResult(await marketApi.tokenAdvancedInfo(auth, chainIndex, tokenContractAddress), {
+          nextSteps: [
+            { action: "如需更全面的风险评估(含集中度/Bundle/开发者)", tool: "onchainos_skill_risk_detect", condition: "建议综合扫描" },
+            { action: "查持有人分布", tool: "onchainos_token_holder", params: { chainIndex, tokenContractAddress } },
+            { action: "查前100盈利地址", tool: "onchainos_token_top_trader", params: { chainIndex, tokenContractAddress } },
+          ],
+        });
+      } catch(e) { return toError(e); }
+    },
+  );
+
+  // ── 综合币价 ──────────────────────────────────────
+
+  server.tool("onchainos_index_current_price",
+    "链上-行情 | 获取综合币价(多数据源加权均价)【场景:查加权均价/指数价格】",
+    {
+      tokens: z.array(z.object({
+        chainIndex: z.string().describe("链ID(字符串)。如 '1'=ETH '56'=BSC '501'=Solana"),
+        tokenContractAddress: z.string().describe("代币合约地址(小写)。主链币传空字符串"),
+      })).min(1).max(100).describe("要查询的代币列表。主链币的 tokenContractAddress 传空字符串"),
+    },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async ({ tokens }) => {
+      if(!auth) return AUTH_REQUIRED("READ");
+      try { return toResult(await marketApi.indexCurrentPrice(auth, tokens)); } catch(e) { return toError(e); }
+    },
+  );
+
+  server.tool("onchainos_index_historical_price",
+    "链上-行情 | 获取历史综合币价，支持分页【场景:查历史加权价格走势】",
+    {
+      chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"),
+      tokenContractAddress: z.string().optional().describe("代币地址, 空字符串=主链币"),
+      limit: z.string().optional().describe("条数, 默认50, 最大200"),
+      cursor: z.string().optional().describe("游标分页"),
+      begin: z.string().optional().describe("开始时间(Unix毫秒)"),
+      end: z.string().optional().describe("结束时间(Unix毫秒)"),
+      period: z.enum(["1m","5m","30m","1h","1d"]).optional().describe("时间间隔, 默认1d"),
+    },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async ({ chainIndex, tokenContractAddress, limit, cursor, begin, end, period }) => {
+      if(!auth) return AUTH_REQUIRED("READ");
+      try { return toResult(await marketApi.indexHistoricalPrice(auth, { chainIndex, tokenContractAddress, limit, cursor, begin, end, period })); } catch(e) { return toError(e); }
+    },
+  );
+
+  // ── 代币 API ──────────────────────────────────────
+
+  server.tool("onchainos_token_search",
+    "链上-行情 | 跨链搜索代币(名称/符号/地址)【场景:搜代币/找合约地址/代币名查地址】",
+    {
+      chains: z.string().describe("链ID, 逗号分隔。如 '1'=ETH '56'=BSC '501'=Solana '8453'=Base"),
+      search: z.string().describe("搜索关键词: 代币名称/符号/合约地址。地址搜索返回精确匹配"),
+      cursor: z.string().optional().describe("分页游标"),
+      limit: z.string().optional().describe("每页条数, 最大100"),
+    },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async ({ chains, search, cursor, limit }) => {
+      if(!auth) return AUTH_REQUIRED("READ");
+      try { return toResult(await marketApi.searchToken(auth, chains, search, cursor, limit)); } catch(e) { return toError(e); }
+    },
+  );
+
+  server.tool("onchainos_token_basic_info",
+    "链上-行情 | 批量获取代币基础信息【场景:查代币名/符号/decimals/总供应量】",
+    {
+      tokens: z.array(z.object({
+        chainIndex: z.string().describe("链ID(字符串)。如 '1'=ETH '501'=Solana。不确定先调 onchainos_market_supported_chain"),
+        tokenContractAddress: z.string().describe("代币合约地址(小写)"),
+      })).min(1).max(100).describe("要查询的代币列表, 最多100个"),
+    },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async ({ tokens }) => {
+      if(!auth) return AUTH_REQUIRED("READ");
+      try { return toResult(await marketApi.tokenBasicInfo(auth, tokens)); } catch(e) { return toError(e); }
+    },
   );
 
   server.tool("onchainos_token_top_liquidity",
-    "CAT:[链上-行情] | ## 功能：获取代币的顶部流动性池\n## 场景：查看代币流动性分布\n## 关键词：流动性, liquidity, 池子\n## 参数：\n##   - chainIndex: 链索引\n##   - tokenContractAddress: 代币合约地址\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：中等 ~10KB\n## 关联：onchainos_token_basic_info 基本信息 → 本工具查流动性",
-    { chainIndex: z.number().int().describe("链索引"), tokenContractAddress: z.string().describe("代币合约地址") },
-    { readOnlyHint: true },
-    async ({ chainIndex, tokenContractAddress }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.tokenTopLiquidity(auth, chainIndex, tokenContractAddress)); } catch(e) { return toError(e); } },
-  );
-
-  server.tool("onchainos_token_holder",
-    "CAT:[链上-行情] | ## 功能：获取代币的持有人信息\n## 场景：分析代币持仓分布\n## 关键词：持有人, holder, 持仓\n## 参数：\n##   - chainIndex: 链索引\n##   - tokenContractAddress: 代币合约地址\n##   - tagFilter: 标签过滤（可选）\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：中等 ~30KB\n## 关联：onchainos_token_basic_info 基本信息 → 本工具看持有人",
+    "链上-行情 | 获取代币前 5 流动性池【场景:查代币的流动性池/交易深度】",
     {
-      chainIndex: z.number().int().describe("链索引"),
-      tokenContractAddress: z.string().describe("代币合约地址"),
-      tagFilter: z.number().int().optional().describe("标签过滤"),
+      chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"),
+      tokenContractAddress: z.string().describe("代币合约地址(小写)。主链币传空字符串 ''。⚠️ 不知道地址 → 先调 onchainos_token_search"),
     },
-    { readOnlyHint: true },
-    async ({ chainIndex, tokenContractAddress, tagFilter }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.tokenHolder(auth, chainIndex, tokenContractAddress, tagFilter)); } catch(e) { return toError(e); } },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async ({ chainIndex, tokenContractAddress }) => {
+      if(!auth) return AUTH_REQUIRED("READ");
+      try { return toResult(await marketApi.tokenTopLiquidity(auth, chainIndex, tokenContractAddress)); } catch(e) { return toError(e); }
+    },
   );
 
   server.tool("onchainos_token_hot",
-    "CAT:[链上-行情] | ## 功能：获取热门代币列表\n## 场景：发现市场热点\n## 关键词：热门, hot, 热点代币\n## 参数：无\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：中等 ~10KB\n## 关联：本工具发现热点 → onchainos_token_basic_info 查看详情",
-    {}, { readOnlyHint: true },
-    async () => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.tokenHot(auth)); } catch(e) { return toError(e); } },
-  );
-
-  server.tool("onchainos_token_toplist",
-    "CAT:[链上-行情] | ## 功能：获取代币排行榜\n## 场景：查看涨跌幅/成交量排行\n## 关键词：排行榜, toplist, 涨幅, 成交量\n## 参数：\n##   - chains: 链索引，逗号分隔\n##   - sortBy: 排序方式（可选）\n##   - timeFrame: 时间窗口（可选）\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：中等 ~10KB\n## 关联：本工具排行 → onchainos_token_basic_info 查看详情",
+    "链上-行情 | 获取热门代币榜单【场景:查热门代币/trending/涨幅榜】",
     {
-      chains: z.string().describe("链索引，逗号分隔（如 '501' 或 '1,56'）"),
-      sortBy: z.number().int().optional().describe("排序方式"),
-      timeFrame: z.number().int().optional().describe("时间窗口"),
+      rankingType: z.enum(["4","5"]).describe("4=Trending(token score) 5=Xmentioned(twitter提及)"),
+      chainIndex: z.string().optional().describe("链ID(字符串), 不传=所有链。常见值: '1'=ETH '56'=BSC '501'=Solana"),
+      rankBy: z.string().optional().describe("排序: 1=价格 2=涨跌幅 3=交易笔数 4=独立地址 5=交易额 6=市值 7=流动性 8=创建时间 9=搜索次数 10=持币数 11=社媒提及 12=社媒分数 14=净流入 15=代币分数"),
+      rankingTimeFrame: z.string().optional().describe("时间窗口: 1=5m 2=1h 3=4h 4=24h"),
+      riskFilter: z.boolean().optional().describe("隐藏风险代币, 默认true"),
+      protocolId: z.string().optional().describe("协议ID, 逗号分隔"),
+      cursor: z.string().optional().describe("分页游标"),
+      limit: z.string().optional().describe("每页条数, 最大100"),
     },
-    { readOnlyHint: true },
-    async ({ chains, sortBy, timeFrame }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.tokenToplist(auth, chains, sortBy, timeFrame)); } catch(e) { return toError(e); } },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async (params) => {
+      if(!auth) return AUTH_REQUIRED("READ");
+      try {
+        const q: Record<string,string|number|boolean|undefined> = {}; for (const [k,v] of Object.entries(params)) if (v!==undefined) q[k]=v;
+        return toResult(await marketApi.tokenHot(auth, q), {
+          nextSteps: [
+            { action: "查看某个热门代币的基础信息", tool: "onchainos_token_basic_info", condition: "从榜单中取 chainIndex 和 tokenContractAddress" },
+            { action: "对感兴趣的代币做风险评估", tool: "onchainos_skill_risk_detect", condition: "热门代币建议先做安全检查" },
+          ],
+        });
+      } catch(e) { return toError(e); }
+    },
   );
 
-  server.tool("onchainos_token_top_trader",
-    "CAT:[链上-行情] | ## 功能：获取代币的顶级交易者信息\n## 场景：跟踪聪明钱\n## 关键词：交易者, trader, 聪明钱\n## 参数：\n##   - chainIndex: 链索引\n##   - tokenContractAddress: 代币合约地址\n##   - tagFilter: 标签过滤（可选）\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：中等 ~10KB\n## 关联：onchainos_token_holder 持有人 → 本工具看顶级交易者",
+  server.tool("onchainos_token_holder",
+    "链上-行情 | 获取代币前 100 持有人【场景:查代币持币地址分布】",
     {
-      chainIndex: z.number().int().describe("链索引"),
-      tokenContractAddress: z.string().describe("代币合约地址"),
-      tagFilter: z.number().int().optional().describe("标签过滤"),
+      chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"),
+      tokenContractAddress: z.string().describe("代币合约地址(小写)。主链币传空字符串 ''。⚠️ 不知道地址 → 先调 onchainos_token_search"),
+      tagFilter: z.string().optional().describe("标签: 1=KOL 2=Dev 3=聪明钱 4=鲸鱼 5=新钱包 6=可疑 7=狙击手 8=疑似钓鱼 9=Bundle"),
+      cursor: z.string().optional().describe("分页游标"),
+      limit: z.string().optional().describe("每页条数, 最大100"),
     },
-    { readOnlyHint: true },
-    async ({ chainIndex, tokenContractAddress, tagFilter }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.tokenTopTrader(auth, chainIndex, tokenContractAddress, tagFilter)); } catch(e) { return toError(e); } },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async ({ chainIndex, tokenContractAddress, tagFilter, cursor, limit }) => {
+      if(!auth) return AUTH_REQUIRED("READ");
+      try { return toResult(await marketApi.tokenHolder(auth, { chainIndex, tokenContractAddress, tagFilter, cursor, limit })); } catch(e) { return toError(e); }
+    },
   );
-
-  // ═════════════════════════════════════════════════════════
-  // 1.4 代币聚类 (4)
-  // ═════════════════════════════════════════════════════════
 
   server.tool("onchainos_token_cluster_supported_chain",
-    "CAT:[链上-行情] | ## 功能：获取代币聚类分析支持的链列表\n## 场景：聚类分析前确认链可用\n## 关键词：聚类, cluster, 链列表\n## 参数：无\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：微小 ~2KB\n## 关联：本工具确认链 → onchainos_token_cluster_overview 总览",
-    {}, { readOnlyHint: true },
+    "链上-行情 | 获取持仓聚类分析支持的链【场景:查哪些链支持持仓集中度分析】",
+    {},
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async () => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.tokenClusterSupportedChain(auth)); } catch(e) { return toError(e); } },
   );
 
   server.tool("onchainos_token_cluster_overview",
-    "CAT:[链上-行情] | ## 功能：获取代币持有人聚类总览\n## 场景：分析代币持仓结构\n## 关键词：聚类, cluster, overview\n## 参数：\n##   - chainIndex: 链索引\n##   - tokenContractAddress: 代币合约地址\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：微小 ~2KB\n## 关联：onchainos_token_cluster_supported_chain → 本工具总览 → onchainos_token_cluster_list 列表",
-    { chainIndex: z.number().int().describe("链索引"), tokenContractAddress: z.string().describe("代币合约地址") },
-    { readOnlyHint: true },
-    async ({ chainIndex, tokenContractAddress }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.tokenClusterOverview(auth, chainIndex, tokenContractAddress)); } catch(e) { return toError(e); } },
+    "链上-行情 | 获取代币持仓集中度分析【场景:查持仓集中度/筹码分布】",
+    {
+      chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"),
+      tokenContractAddress: z.string().describe("代币合约地址(小写)。主链币传空字符串 ''。⚠️ 不知道地址 → 先调 onchainos_token_search"),
+    },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async ({ chainIndex, tokenContractAddress }) => {
+      if(!auth) return AUTH_REQUIRED("READ");
+      try { return toResult(await marketApi.tokenClusterOverview(auth, chainIndex, tokenContractAddress)); } catch(e) { return toError(e); }
+    },
   );
 
   server.tool("onchainos_token_cluster_list",
-    "CAT:[链上-行情] | ## 功能：获取代币持有人聚类列表\n## 场景：查看聚类详情\n## 关键词：聚类列表, cluster list\n## 参数：\n##   - chainIndex: 链索引\n##   - tokenContractAddress: 代币合约地址\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：中等 ~30KB\n## 关联：onchainos_token_cluster_overview 总览 → 本工具列表 → onchainos_token_cluster_top_holders 顶级持有人",
-    { chainIndex: z.number().int().describe("链索引"), tokenContractAddress: z.string().describe("代币合约地址") },
-    { readOnlyHint: true },
+    "链上-行情 | 获取持仓集群列表【场景:查看大额持仓集群】",
+    { chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"), tokenContractAddress: z.string().describe("代币合约地址(小写)。主链币传空字符串 ''。⚠️ 不知道地址 → 先调 onchainos_token_search") },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async ({ chainIndex, tokenContractAddress }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.tokenClusterList(auth, chainIndex, tokenContractAddress)); } catch(e) { return toError(e); } },
   );
 
   server.tool("onchainos_token_cluster_top_holders",
-    "CAT:[链上-行情] | ## 功能：获取聚类中的顶级持有人\n## 场景：追踪大户持仓\n## 关键词：顶级持有人, top holders, cluster\n## 参数：\n##   - chainIndex: 链索引\n##   - tokenContractAddress: 代币合约地址\n##   - rangeFilter: 范围过滤（可选）\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：中等 ~10KB\n## 关联：onchainos_token_cluster_list 列表 → 本工具顶级持有人",
+    "链上-行情 | 获取前10/50/100持仓集中度【场景:查前N名持仓占比】",
     {
-      chainIndex: z.number().int().describe("链索引"),
-      tokenContractAddress: z.string().describe("代币合约地址"),
-      rangeFilter: z.number().int().optional().describe("范围过滤"),
+      chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"),
+      tokenContractAddress: z.string().describe("代币合约地址(小写)。主链币传空字符串 ''。⚠️ 不知道地址 → 先调 onchainos_token_search"),
+      rangeFilter: z.enum(["1","2","3"]).describe("范围: 1=前10 2=前50 3=前100"),
     },
-    { readOnlyHint: true },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async ({ chainIndex, tokenContractAddress, rangeFilter }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.tokenClusterTopHolders(auth, chainIndex, tokenContractAddress, rangeFilter)); } catch(e) { return toError(e); } },
   );
 
-  // ═════════════════════════════════════════════════════════
-  // 1.5 指数价格 (2)
-  // ═════════════════════════════════════════════════════════
-
-  server.tool("onchainos_index_current_price",
-    "CAT:[链上-行情] | ## 功能：获取代币指数当前价格\n## 场景：查询指数价格\n## 关键词：指数, index price\n## 参数：\n##   - chainIndex: 链索引\n##   - tokenAddress: 代币合约地址\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：微小 ~1KB\n## 关联：onchainos_market_price 实时价 → 本工具指数价 → onchainos_index_historical_price 历史指数",
-    { chainIndex: z.number().int().describe("链索引"), tokenAddress: z.string().describe("代币合约地址") },
-    { readOnlyHint: true },
-    async ({ chainIndex, tokenAddress }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.indexCurrentPrice(auth, { chainIndex, tokenAddress })); } catch(e) { return toError(e); } },
-  );
-
-  server.tool("onchainos_index_historical_price",
-    "CAT:[链上-行情] | ## 功能：获取代币指数历史价格\n## 场景：指数价格回测\n## 关键词：历史指数, index historical\n## 参数：\n##   - chainIndex: 链索引\n##   - tokenAddress: 代币合约地址\n##   - period: K线周期（可选）\n##   - limit: 返回条数（可选）\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：中等 ~30KB\n## 关联：onchainos_index_current_price 当前指数 → 本工具历史指数",
+  server.tool("onchainos_token_top_trader",
+    "链上-行情 | 获取代币前100盈利地址【场景:查谁在赚钱/Top trader】",
     {
-      chainIndex: z.number().int().describe("链索引"),
-      tokenAddress: z.string().describe("代币合约地址"),
-      period: z.string().optional().describe("K线周期"),
-      limit: z.number().int().optional().describe("返回条数"),
+      chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"),
+      tokenContractAddress: z.string().describe("代币合约地址(小写)。主链币传空字符串 ''。⚠️ 不知道地址 → 先调 onchainos_token_search"),
+      tagFilter: z.string().optional().describe("标签过滤: 1=KOL 2=Dev 3=聪明钱 4=鲸鱼 5=新钱包 6=老鼠仓 7=狙击手 8=疑似钓鱼 9=Bundle"),
+      cursor: z.string().optional().describe("分页游标"),
+      limit: z.string().optional().describe("每页条数, 最大100"),
     },
-    { readOnlyHint: true },
-    async ({ chainIndex, tokenAddress, period, limit }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.indexHistoricalPrice(auth, chainIndex, tokenAddress, period, limit)); } catch(e) { return toError(e); } },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async ({ chainIndex, tokenContractAddress, tagFilter, cursor, limit }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.tokenTopTrader(auth, { chainIndex, tokenContractAddress, tagFilter, cursor, limit })); } catch(e) { return toError(e); } },
   );
 
-  // ═════════════════════════════════════════════════════════
-  // 1.6 投资组合 Portfolio (5)
-  // ═════════════════════════════════════════════════════════
-
-  server.tool("onchainos_portfolio_supported_chain",
-    "CAT:[链上-行情] | ## 功能：获取投资组合 API 支持的链列表\n## 场景：查询投资组合前确认链可用\n## 关键词：投资组合, portfolio, 链列表\n## 参数：无\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：微小 ~2KB\n## 关联：本工具确认链 → onchainos_portfolio_overview 总览",
-    {}, { readOnlyHint: true },
-    async () => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.portfolioSupportedChain(auth)); } catch(e) { return toError(e); } },
-  );
-
-  server.tool("onchainos_portfolio_overview",
-    "CAT:[链上-行情] | ## 功能：获取地址投资组合总览\n## 场景：查看钱包整体表现\n## 关键词：投资组合, portfolio, overview\n## 参数：\n##   - chainIndex: 链索引\n##   - walletAddress: 钱包地址\n##   - timeFrame: 时间窗口（可选）\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：微小 ~2KB\n## 关联：onchainos_portfolio_supported_chain → 本工具总览 → onchainos_portfolio_recent_pnl 盈亏",
-    {
-      chainIndex: z.number().int().describe("链索引"),
-      walletAddress: z.string().describe("钱包地址"),
-      timeFrame: z.number().int().optional().describe("时间窗口"),
-    },
-    { readOnlyHint: true },
-    async ({ chainIndex, walletAddress, timeFrame }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.portfolioOverview(auth, chainIndex, walletAddress, timeFrame)); } catch(e) { return toError(e); } },
-  );
-
-  server.tool("onchainos_portfolio_recent_pnl",
-    "CAT:[链上-行情] | ## 功能：获取地址最近盈亏列表\n## 场景：查看交易盈亏\n## 关键词：盈亏, PnL, 收益\n## 参数：\n##   - chainIndex: 链索引\n##   - walletAddress: 钱包地址\n##   - limit: 返回条数（可选）\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：中等 ~10KB\n## 关联：onchainos_portfolio_overview 总览 → 本工具盈亏列表",
-    {
-      chainIndex: z.number().int().describe("链索引"),
-      walletAddress: z.string().describe("钱包地址"),
-      limit: z.number().int().optional().describe("返回条数"),
-    },
-    { readOnlyHint: true },
-    async ({ chainIndex, walletAddress, limit }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.portfolioRecentPnl(auth, chainIndex, walletAddress, limit)); } catch(e) { return toError(e); } },
-  );
-
-  server.tool("onchainos_portfolio_token_latest_pnl",
-    "CAT:[链上-行情] | ## 功能：获取地址在特定代币上的最新盈亏\n## 场景：查看单币盈亏\n## 关键词：盈亏, PnL, token, 代币\n## 参数：\n##   - chainIndex: 链索引\n##   - walletAddress: 钱包地址\n##   - tokenContractAddress: 代币合约地址\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：微小 ~1KB\n## 关联：onchainos_portfolio_recent_pnl 列表 → 本工具单币详情",
-    {
-      chainIndex: z.number().int().describe("链索引"),
-      walletAddress: z.string().describe("钱包地址"),
-      tokenContractAddress: z.string().describe("代币合约地址"),
-    },
-    { readOnlyHint: true },
-    async ({ chainIndex, walletAddress, tokenContractAddress }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.portfolioTokenLatestPnl(auth, chainIndex, walletAddress, tokenContractAddress)); } catch(e) { return toError(e); } },
-  );
-
-  server.tool("onchainos_portfolio_dex_history",
-    "CAT:[链上-行情] | ## 功能：获取地址的 DEX 交易历史\n## 场景：查看地址在 DEX 上的交易记录\n## 关键词：DEX历史, portfolio, dex\n## 参数：\n##   - chainIndex: 链索引\n##   - walletAddress: 钱包地址\n##   - begin: 开始时间戳（可选）\n##   - end: 结束时间戳（可选）\n##   - limit: 返回条数（可选）\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：中等 ~30KB\n## 关联：onchainos_portfolio_overview 总览 → 本工具查看DEX历史",
-    {
-      chainIndex: z.number().int().describe("链索引"),
-      walletAddress: z.string().describe("钱包地址"),
-      begin: z.number().optional().describe("开始时间戳 ms"),
-      end: z.number().optional().describe("结束时间戳 ms"),
-      limit: z.number().int().optional().describe("返回条数"),
-    },
-    { readOnlyHint: true },
-    async ({ chainIndex, walletAddress, begin, end, limit }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.portfolioDexHistory(auth, chainIndex, walletAddress, begin, end, limit)); } catch(e) { return toError(e); } },
-  );
-
-  // ═════════════════════════════════════════════════════════
-  // 1.7 地址追踪 (1)
-  // ═════════════════════════════════════════════════════════
-
-  server.tool("onchainos_address_tracker_trades",
-    "CAT:[链上-行情] | ## 功能：获取地址追踪交易数据\n## 场景：跟踪 KOL/聪明钱地址交易\n## 关键词：地址追踪, tracker, KOL, 聪明钱\n## 参数：\n##   - trackerType: 追踪类型 (1=KOL, 2=SmartMoney)\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：中等 ~10KB\n## 关联：本工具追踪地址 → onchainos_portfolio_overview 查看地址组合",
-    {
-      trackerType: z.number().int().describe("追踪类型：1=KOL, 2=SmartMoney"),
-    },
-    { readOnlyHint: true },
-    async ({ trackerType }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.addressTrackerTrades(auth, trackerType)); } catch(e) { return toError(e); } },
-  );
-
-  // ═════════════════════════════════════════════════════════
-  // 1.8 信号 Signal (4)
-  // ═════════════════════════════════════════════════════════
+  // ── 信号 ──────────────────────────────────────────
 
   server.tool("onchainos_signal_supported_chain",
-    "CAT:[链上-行情] | ## 功能：获取信号 API 支持的链列表\n## 场景：查询信号前确认链可用\n## 关键词：信号, signal, 链列表\n## 参数：无\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：微小 ~2KB\n## 关联：本工具确认链 → onchainos_signal_list 信号列表",
-    {}, { readOnlyHint: true },
+    "链上-信号 | 获取信号支持的链【场景:查哪些链有聪明钱信号】",
+    {},
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async () => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.signalSupportedChain(auth)); } catch(e) { return toError(e); } },
   );
 
   server.tool("onchainos_signal_list",
-    "CAT:[链上-行情] | ## 功能：获取最新信号列表\n## 场景：获取交易信号\n## 关键词：信号列表, signal\n## 参数：\n##   - chainIndex: 链索引\n##   - signalType: 信号类型（可选）\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：中等 ~10KB\n## 关联：onchainos_signal_supported_chain → 本工具获取信号",
+    "链上-信号 | 获取最新买入信号(聪明钱/KOL/鲸鱼)【场景:查聪明钱在买什么/最新信号】",
     {
-      chainIndex: z.number().int().optional().describe("链索引"),
-      signalType: z.string().optional().describe("信号类型"),
+      chainIndex: z.string().describe("链ID(字符串)。如 '1'=ETH '56'=BSC '501'=Solana。⚠️ 不确定先调 onchainos_market_supported_chain"),
+      walletType: z.string().optional().describe("钱包类型: 1=聪明钱 2=KOL 3=鲸鱼, 逗号分隔如'1,2,3'"),
+      minAmountUsd: z.string().optional().describe("最小交易金额(USD)"),
+      maxAmountUsd: z.string().optional().describe("最大交易金额(USD)"),
+      minAddressCount: z.string().optional().describe("最小地址数"),
+      maxAddressCount: z.string().optional().describe("最大地址数"),
+      tokenAddress: z.string().optional().describe("指定代币合约地址(小写)。主链币传空字符串"),
+      minMarketCapUsd: z.string().optional().describe("最小市值(USD)"),
+      maxMarketCapUsd: z.string().optional().describe("最大市值(USD)"),
+      minLiquidityUsd: z.string().optional().describe("最小流动性(USD)"),
+      maxLiquidityUsd: z.string().optional().describe("最大流动性(USD)"),
+      cursor: z.string().optional().describe("分页游标"),
+      limit: z.string().optional().describe("每页条数, 最大100"),
     },
-    { readOnlyHint: true },
-    async (params) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.signalList(auth, params as Record<string, unknown>)); } catch(e) { return toError(e); } },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async (params) => {
+      if(!auth) return AUTH_REQUIRED("READ");
+      try {
+        const b: Record<string,unknown> = {}; for (const [k,v] of Object.entries(params)) if (v!==undefined) b[k]=v;
+        return toResult(await marketApi.signalList(auth, b), {
+          nextSteps: [
+            { action: "如需自动过滤风险+批量分析信号代币", tool: "onchainos_skill_signal_aggregate", condition: "有信号列表后" },
+            { action: "进一步分析某代币风险", tool: "onchainos_skill_risk_detect", params: { chainIndex: "{{取信号中的 chainIndex}}", tokenContractAddress: "{{取信号中的 tokenContractAddress}}" } },
+          ],
+        });
+      } catch(e) { return toError(e); } },
   );
 
   server.tool("onchainos_leaderboard_supported_chain",
-    "CAT:[链上-行情] | ## 功能：获取排行榜支持的链列表\n## 场景：查询排行榜前确认链可用\n## 关键词：排行榜, leaderboard, 链列表\n## 参数：无\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：微小 ~2KB\n## 关联：本工具确认链 → onchainos_leaderboard_list 排行榜",
-    {}, { readOnlyHint: true },
+    "链上-信号 | 获取聪明钱排行榜支持的链【场景:查哪些链有聪明钱排行】",
+    {},
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async () => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.leaderboardSupportedChain(auth)); } catch(e) { return toError(e); } },
   );
 
   server.tool("onchainos_leaderboard_list",
-    "CAT:[链上-行情] | ## 功能：获取聪明钱/KOL 排行榜\n## 场景：发现顶级交易者\n## 关键词：排行榜, leaderboard, 聪明钱\n## 参数：\n##   - chainIndex: 链索引\n##   - timeFrame: 时间窗口（可选）\n##   - sortBy: 排序方式（可选）\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：中等 ~10KB\n## 关联：onchainos_leaderboard_supported_chain → 本工具排行榜 → onchainos_address_tracker_trades 追踪",
+    "链上-信号 | 获取聪明钱排行榜(PnL/ROI/胜率)【场景:查聪明钱/顶级交易员排行】",
     {
-      chainIndex: z.number().int().describe("链索引"),
-      timeFrame: z.number().int().optional().describe("时间窗口"),
-      sortBy: z.number().int().optional().describe("排序方式"),
+      chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"),
+      timeFrame: z.enum(["1","2","3","4","5"]).describe("时间范围: 1=1D 2=3D 3=7D 4=1M 5=3M"),
+      sortBy: z.enum(["1","2","3","4","5"]).describe("排序: 1=PnL 2=胜率 3=交易笔数 4=交易量 5=ROI"),
+      walletType: z.string().optional().describe("钱包类型: 1=KOL 2=Dev 3=聪明钱 4=鲸鱼 5=新钱包 6=老鼠仓 7=狙击手 8=疑似钓鱼 9=Bundle 10=Pump聪明钱。不传=所有"),
+      minRealizedPnlUsd: z.string().optional().describe("最小已实现盈亏(USD)"),
+      maxRealizedPnlUsd: z.string().optional().describe("最大已实现盈亏(USD)"),
+      minWinRatePercent: z.string().optional().describe("最小胜率(%)"),
+      maxWinRatePercent: z.string().optional().describe("最大胜率(%)"),
+      minTxs: z.string().optional().describe("最小交易笔数"),
+      maxTxs: z.string().optional().describe("最大交易笔数"),
+      minTxVolume: z.string().optional().describe("最小交易金额(USD)"),
+      maxTxVolume: z.string().optional().describe("最大交易金额(USD)"),
     },
-    { readOnlyHint: true },
-    async ({ chainIndex, timeFrame, sortBy }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.leaderboardList(auth, chainIndex, timeFrame, sortBy)); } catch(e) { return toError(e); } },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async (params) => { if(!auth) return AUTH_REQUIRED("READ"); try { const q: Record<string,string> = {}; for (const [k,v] of Object.entries(params)) if (v!==undefined) q[k]=v; return toResult(await marketApi.leaderboardList(auth, q)); } catch(e) { return toError(e); } },
   );
 
-  // ═════════════════════════════════════════════════════════
-  // 1.9 Memepump (7)
-  // ═════════════════════════════════════════════════════════
+  // ── Memepump / 扫链 ─────────────────────────────
 
   server.tool("onchainos_memepump_supported",
-    "CAT:[链上-行情] | ## 功能：获取 Memepump 支持的链和协议\n## 场景：查询 Meme 币数据前确认可用链\n## 关键词：memepump, meme, 链列表\n## 参数：无\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：微小 ~2KB\n## 关联：本工具确认链 → onchainos_memepump_token_list 代币列表",
-    {}, { readOnlyHint: true },
+    "链上-行情 | 获取扫链支持的链和协议【场景:查Meme扫链支持哪些链/协议】",
+    {},
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async () => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.memepumpSupported(auth)); } catch(e) { return toError(e); } },
   );
 
   server.tool("onchainos_memepump_token_list",
-    "CAT:[链上-行情] | ## 功能：获取 Meme 代币列表\n## 场景：发现 Meme 币机会\n## 关键词：meme, memepump, token list\n## 参数：\n##   - chainIndex: 链索引\n##   - protocolId: 协议ID（可选）\n##   - sort: 排序字段（可选）\n##   - order: 排序方向 asc/desc（可选）\n##   - limit: 返回条数（可选）\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：中等 ~30KB\n## 关联：onchainos_memepump_supported → 本工具列表 → onchainos_memepump_token_details 详情",
+    "链上-行情 | 筛选 Meme 代币(30+维度)【场景:扫新币/查Meme代币列表】",
     {
-      chainIndex: z.number().int().describe("链索引"),
-      protocolId: z.number().int().optional().describe("协议ID"),
-      sort: z.string().optional().describe("排序字段（如 createdTimestamp）"),
-      order: z.enum(["asc","desc"]).optional().describe("排序方向"),
-      limit: z.number().int().optional().describe("返回条数"),
+      chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"),
+      stage: z.enum(["NEW","MIGRATING","MIGRATED"]).describe("代币阶段"),
+      protocolIdList: z.string().optional().describe("协议ID, 逗号分隔"),
+      walletAddress: z.string().optional().describe("用户钱包地址"),
     },
-    { readOnlyHint: true },
-    async ({ chainIndex, protocolId, sort, order, limit }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.memepumpTokenList(auth, chainIndex, protocolId, sort, order, limit)); } catch(e) { return toError(e); } },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async ({ chainIndex, stage, ...rest }) => {
+      if(!auth) return AUTH_REQUIRED("READ");
+      try {
+        const q: Record<string,string|boolean|undefined>={chainIndex,stage}; for (const [k,v] of Object.entries(rest)) if (v!==undefined) q[k]=String(v);
+        return toResult(await marketApi.memepumpTokenList(auth, q), {
+          nextSteps: [
+            { action: "查看某代币的详细扫链信息", tool: "onchainos_memepump_token_details", params: { chainIndex: "{{取自列表的 chainIndex}}", tokenContractAddress: "{{取列表中的 tokenContractAddress}}" } },
+            { action: "对发现的代币做风险检测", tool: "onchainos_skill_risk_detect", condition: "发现新代币后建议做安全扫描" },
+          ],
+        });
+      } catch(e) { return toError(e); } },
   );
 
   server.tool("onchainos_memepump_token_details",
-    "CAT:[链上-行情] | ## 功能：获取 Meme 代币详细信息\n## 场景：查看 Meme 币详情\n## 关键词：meme, details, 详情\n## 参数：\n##   - chainIndex: 链索引\n##   - tokenContractAddress: 代币合约地址\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：微小 ~2KB\n## 关联：onchainos_memepump_token_list 列表 → 本工具详情",
-    { chainIndex: z.number().int().describe("链索引"), tokenContractAddress: z.string().describe("代币合约地址") },
-    { readOnlyHint: true },
-    async ({ chainIndex, tokenContractAddress }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.memepumpTokenDetails(auth, chainIndex, tokenContractAddress)); } catch(e) { return toError(e); } },
+    "链上-行情 | 单一代币扫链详情【场景:查Meme代币详细数据】",
+    { chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"), tokenContractAddress: z.string().describe("代币合约地址(小写)。主链币传空字符串 ''"), walletAddress: z.string().optional().describe("查用户持仓") },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async ({ chainIndex, tokenContractAddress, walletAddress }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.memepumpTokenDetails(auth, chainIndex, tokenContractAddress, walletAddress)); } catch(e) { return toError(e); } },
   );
 
   server.tool("onchainos_memepump_token_dev_info",
-    "CAT:[链上-行情] | ## 功能：获取 Meme 代币开发者信息\n## 场景：查看开发者背景\n## 关键词：meme, developer, 开发者\n## 参数：\n##   - chainIndex: 链索引\n##   - tokenContractAddress: 代币合约地址\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：微小 ~1KB\n## 关联：onchainos_memepump_token_details 详情 → 本工具开发者信息",
-    { chainIndex: z.number().int().describe("链索引"), tokenContractAddress: z.string().describe("代币合约地址") },
-    { readOnlyHint: true },
+    "链上-行情 | 获取开发者信息(发币数/RugPull/持仓)【场景:查代币开发者/有没有Rug历史】",
+    { chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"), tokenContractAddress: z.string().describe("代币合约地址(小写)。主链币传空字符串 ''") },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async ({ chainIndex, tokenContractAddress }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.memepumpTokenDevInfo(auth, chainIndex, tokenContractAddress)); } catch(e) { return toError(e); } },
   );
 
   server.tool("onchainos_memepump_similar_token",
-    "CAT:[链上-行情] | ## 功能：获取相似 Meme 代币\n## 场景：发现关联代币\n## 关键词：meme, similar, 相似代币\n## 参数：\n##   - chainIndex: 链索引\n##   - tokenContractAddress: 代币合约地址\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：中等 ~10KB\n## 关联：onchainos_memepump_token_details 详情 → 本工具相似代币",
-    { chainIndex: z.number().int().describe("链索引"), tokenContractAddress: z.string().describe("代币合约地址") },
-    { readOnlyHint: true },
+    "链上-行情 | 查找相似代币【场景:找相似Meme代币】",
+    { chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"), tokenContractAddress: z.string().describe("代币合约地址(小写)。主链币传空字符串 ''") },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async ({ chainIndex, tokenContractAddress }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.memepumpSimilarToken(auth, chainIndex, tokenContractAddress)); } catch(e) { return toError(e); } },
   );
 
   server.tool("onchainos_memepump_bundle_info",
-    "CAT:[链上-行情] | ## 功能：获取 Meme 代币捆绑包信息\n## 场景：查看代币捆绑情况\n## 关键词：meme, bundle, 捆绑\n## 参数：\n##   - chainIndex: 链索引\n##   - tokenContractAddress: 代币合约地址\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：微小 ~2KB\n## 关联：onchainos_memepump_token_details → 本工具捆绑信息",
-    { chainIndex: z.number().int().describe("链索引"), tokenContractAddress: z.string().describe("代币合约地址") },
-    { readOnlyHint: true },
+    "链上-行情 | 检测打包交易(bundler占比)【场景:检测有没有打包/老鼠仓】",
+    { chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"), tokenContractAddress: z.string().describe("代币合约地址(小写)。主链币传空字符串 ''") },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
     async ({ chainIndex, tokenContractAddress }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.memepumpBundleInfo(auth, chainIndex, tokenContractAddress)); } catch(e) { return toError(e); } },
   );
 
   server.tool("onchainos_memepump_aped_wallet",
-    "CAT:[链上-行情] | ## 功能：获取 Meme 代币的 APE 钱包信息\n## 场景：跟踪聪明钱加仓\n## 关键词：meme, ape, wallet, 钱包\n## 参数：\n##   - chainIndex: 链索引\n##   - tokenContractAddress: 代币合约地址\n## 鉴权：⚠️ 需要 API Key（只读）\n## 风险：READ — 只读查询\n## 返回量：中等 ~10KB\n## 关联：onchainos_memepump_token_details → 本工具钱包信息",
-    { chainIndex: z.number().int().describe("链索引"), tokenContractAddress: z.string().describe("代币合约地址") },
-    { readOnlyHint: true },
-    async ({ chainIndex, tokenContractAddress }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.memepumpApedWallet(auth, chainIndex, tokenContractAddress)); } catch(e) { return toError(e); } },
+    "链上-行情 | 获取同车钱包列表(含PnL)【场景:查一起买入的钱包/同车地址】",
+    { chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"), tokenContractAddress: z.string().describe("代币合约地址(小写)。主链币传空字符串 ''"), walletAddress: z.string().optional().describe("指定钱包") },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async ({ chainIndex, tokenContractAddress, walletAddress }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.memepumpApedWallet(auth, chainIndex, tokenContractAddress, walletAddress)); } catch(e) { return toError(e); } },
   );
+
+  // ── Portfolio / 地址分析 ─────────────────────────
+
+  server.tool("onchainos_portfolio_supported_chain",
+    "链上-分析 | 获取地址分析支持的链【场景:查哪些链支持地址画像分析】",
+    {},
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async () => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.portfolioSupportedChain(auth)); } catch(e) { return toError(e); } },
+  );
+
+  server.tool("onchainos_portfolio_overview",
+    "链上-分析 | 获取地址画像概览(PnL/胜率)【场景:分析钱包地址的盈亏/胜率】",
+    {
+      chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"),
+      walletAddress: z.string().describe("钱包地址"),
+      timeFrame: z.enum(["1","2","3","4","5"]).describe("时间范围: 1=1D 2=3D 3=7D 4=1M 5=3M"),
+    },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async ({ chainIndex, walletAddress, timeFrame }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.portfolioOverview(auth, chainIndex, walletAddress, timeFrame)); } catch(e) { return toError(e); } },
+  );
+
+  server.tool("onchainos_portfolio_recent_pnl",
+    "链上-分析 | 获取地址近期收益列表【场景:查钱包近期的盈亏记录】",
+    { chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"), walletAddress: z.string().describe("钱包地址"), cursor: z.string().optional(), limit: z.string().optional() },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async ({ chainIndex, walletAddress, cursor, limit }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.portfolioRecentPnl(auth, { chainIndex, walletAddress, cursor, limit })); } catch(e) { return toError(e); } },
+  );
+
+  server.tool("onchainos_portfolio_token_latest_pnl",
+    "链上-分析 | 获取地址对特定代币的最新收益【场景:查钱包在某个代币上的盈亏】",
+    { chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"), walletAddress: z.string().describe("钱包地址"), tokenContractAddress: z.string().describe("代币合约地址(小写)。主链币传空字符串 ''。⚠️ 不知道地址 → 先调 onchainos_token_search") },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async ({ chainIndex, walletAddress, tokenContractAddress }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.portfolioTokenLatestPnl(auth, chainIndex, walletAddress, tokenContractAddress)); } catch(e) { return toError(e); } },
+  );
+
+  server.tool("onchainos_portfolio_dex_history",
+    "链上-分析 | 获取地址 DEX 交易历史【场景:查钱包的DEX买卖记录/交易明细】",
+    {
+      chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '8453'=Base '501'=Solana '42161'=Arbitrum。40+链, 不确定调 supported_chain"), walletAddress: z.string().describe("钱包地址"),
+      begin: z.string().describe("开始时间戳(毫秒)"), end: z.string().describe("结束时间戳(毫秒)"),
+      tokenContractAddress: z.string().optional().describe("按代币地址筛选(小写)"), type: z.string().optional().describe("1=BUY 2=SELL 3=TransferIn 4=TransferOut"), cursor: z.string().optional(), limit: z.string().optional(),
+    },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async ({ chainIndex, walletAddress, begin, end, tokenContractAddress, type, cursor, limit }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.portfolioDexHistory(auth, { chainIndex, walletAddress, begin, end, tokenContractAddress, type, cursor, limit })); } catch(e) { return toError(e); } },
+  );
+
+  server.tool("onchainos_address_tracker_trades",
+    "链上-分析 | 获取地址追踪交易(聪明钱/KOL)【场景:追踪聪明钱/KOL的买卖动态】",
+    {
+      trackerType: z.enum(["1","2","3"]).describe("1=平台聪明钱 2=Top100 KOL 3=自定义多地址"),
+      walletAddress: z.string().optional().describe("trackerType=3时必填, 逗号分隔, 最多20个"),
+      tradeType: z.enum(["0","1","2"]).optional().describe("0=全部 1=买入 2=卖出"),
+      chainIndex: z.string().optional().describe("链ID(字符串), 默认全部。如 '1'=ETH '56'=BSC '501'=Solana"),
+      minVolume: z.string().optional(), maxVolume: z.string().optional(),
+      minHolders: z.string().optional(), minMarketCap: z.string().optional(), maxMarketCap: z.string().optional(),
+      minLiquidity: z.string().optional(), maxLiquidity: z.string().optional(),
+    },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async (params) => { if(!auth) return AUTH_REQUIRED("READ"); try { const q: Record<string,string> = {}; for (const [k,v] of Object.entries(params)) if (v!==undefined) q[k]=String(v); return toResult(await marketApi.addressTrackerTrades(auth, q as any)); } catch(e) { return toError(e); } },
+  );
+
+  // ── Social / 社媒 ─────────────────────────────────
+
+  server.tool("onchainos_social_news_latest",
+    "链上-分析 | 获取最新加密货币新闻(含情绪标签)【场景:看最新币圈新闻】",
+    {
+      tokenSymbols: z.string().optional().describe("代币符号,逗号分隔,最多20个,如BTC,ETH"),
+      begin: z.string().optional().describe("起始时间戳(毫秒),默认72h前,最大回溯180天"),
+      end: z.string().optional().describe("结束时间戳(毫秒),默认now"),
+      importance: z.enum(["1","2","3"]).optional().describe("重要程度: 1=高 2=中 3=低"),
+      platform: z.string().optional().describe("新闻来源域名,如coindesk.com。从 onchainos_social_news_platforms 获取"),
+      limit: z.string().optional().describe("每页条数,1-50,默认10"),
+      cursor: z.string().optional().describe("分页游标"),
+      detailLevel: z.enum(["1","2"]).optional().describe("1=摘要(默认) 2=全文"),
+      language: z.string().optional().describe("语言,BCP-47格式,如en_US/zh_CN,默认en_US"),
+    },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async (params) => { if(!auth) return AUTH_REQUIRED("READ"); try { const q: Record<string,string>={}; for(const [k,v] of Object.entries(params)) if(v!==undefined) q[k]=v; return toResult(await marketApi.socialNewsLatest(auth, q)); } catch(e) { return toError(e); } },
+  );
+
+  server.tool("onchainos_social_news_by_symbol",
+    "链上-分析 | 按代币符号获取新闻【场景:查某个代币的相关新闻】",
+    {
+      tokenSymbols: z.string().describe("代币符号,逗号分隔,最多20个。必填"),
+      sortBy: z.enum(["1","2"]).optional().describe("1=最新 2=热门,默认1"),
+      sentiment: z.enum(["1","2","3"]).optional().describe("情绪: 1=看多 2=看空 3=中性"),
+      importance: z.enum(["1","2","3"]).optional().describe("重要程度: 1=高 2=中 3=低"),
+      platform: z.string().optional().describe("新闻来源域名"),
+      limit: z.string().optional().describe("每页条数,1-50,默认10"),
+      cursor: z.string().optional().describe("分页游标"),
+      detailLevel: z.enum(["1","2"]).optional().describe("1=摘要 2=全文"),
+      begin: z.string().optional().describe("起始时间戳(毫秒)"),
+      end: z.string().optional().describe("结束时间戳(毫秒)"),
+      language: z.string().optional().describe("语言,如en_US/zh_CN"),
+    },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async (params) => { if(!auth) return AUTH_REQUIRED("READ"); try { const q: Record<string,string>={}; for(const [k,v] of Object.entries(params)) if(v!==undefined) q[k]=v; return toResult(await marketApi.socialNewsBySymbol(auth, q)); } catch(e) { return toError(e); } },
+  );
+
+  server.tool("onchainos_social_news_search",
+    "链上-分析 | 全文搜索加密货币新闻【场景:按关键词搜新闻】",
+    {
+      keyword: z.string().describe("全文搜索关键词,必填。支持代币名/项目名"),
+      sortBy: z.enum(["1","2"]).optional().describe("1=最新 2=热门"),
+      sentiment: z.enum(["1","2","3"]).optional().describe("情绪: 1=看多 2=看空 3=中性"),
+      importance: z.enum(["1","2","3"]).optional().describe("重要程度: 1=高 2=中 3=低"),
+      platform: z.string().optional().describe("新闻来源域名"),
+      tokenSymbols: z.string().optional().describe("代币符号,逗号分隔,最多20个"),
+      begin: z.string().optional().describe("起始时间戳(毫秒)"),
+      end: z.string().optional().describe("结束时间戳(毫秒)"),
+      detailLevel: z.enum(["1","2"]).optional().describe("1=摘要 2=全文"),
+      limit: z.string().optional().describe("每页条数,1-50,默认10"),
+      cursor: z.string().optional().describe("分页游标"),
+      language: z.string().optional().describe("语言,如en_US/zh_CN"),
+    },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async (params) => { if(!auth) return AUTH_REQUIRED("READ"); try { const q: Record<string,string>={}; for(const [k,v] of Object.entries(params)) if(v!==undefined) q[k]=v; return toResult(await marketApi.socialNewsSearch(auth, q)); } catch(e) { return toError(e); } },
+  );
+
+  server.tool("onchainos_social_news_detail",
+    "链上-分析 | 获取新闻正文【场景:看新闻全文/详情】",
+    { articleId: z.string().describe("文章ID,从列表接口articles[].id获取"), language: z.string().optional().describe("en_US/zh_CN") },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async ({ articleId, language }) => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.socialNewsDetail(auth, articleId, language)); } catch(e) { return toError(e); } },
+  );
+
+  server.tool("onchainos_social_news_platforms",
+    "链上-分析 | 获取可用新闻平台列表【场景:看新闻来源有哪些】",
+    {},
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async () => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await marketApi.socialNewsPlatforms(auth)); } catch(e) { return toError(e); } },
+  );
+
+  server.tool("onchainos_social_sentiment_symbol",
+    "链上-分析 | 获取代币情绪指标【场景:查市场情绪/多空/看涨看跌】",
+    { tokenSymbols: z.string().describe("代币符号,逗号分隔,最多20个"), timeFrame: z.enum(["1","2","3"]).optional().describe("1=1h 2=4h 3=24h"), trendPoints: z.string().optional().describe("趋势数据点数,>0返回trend数组") },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async (params) => { if(!auth) return AUTH_REQUIRED("READ"); try { const q: Record<string,string>={}; for(const [k,v] of Object.entries(params)) if(v!==undefined) q[k]=v; return toResult(await marketApi.socialSentimentSymbol(auth, q)); } catch(e) { return toError(e); } },
+  );
+
+  server.tool("onchainos_social_sentiment_ranking",
+    "链上-分析 | 获取情绪热度排行榜【场景:查热度最高/提及最多的代币】",
+    { timeFrame: z.enum(["1","2","3"]).optional(), sortBy: z.enum(["1"]).optional().describe("目前仅支持1=hot(按提及量)"), limit: z.string().optional() },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async (params) => { if(!auth) return AUTH_REQUIRED("READ"); try { const q: Record<string,string>={}; for(const [k,v] of Object.entries(params)) if(v!==undefined) q[k]=v; return toResult(await marketApi.socialSentimentRanking(auth, q)); } catch(e) { return toError(e); } },
+  );
+
+  server.tool("onchainos_social_vibe_timeline",
+    "链上-分析 | 获取代币 Vibe 热度时间线【场景:查代币热度趋势/社媒热度变化】",
+    { chainIndex: z.string().describe("链ID(字符串)。如 '1'=ETH '501'=Solana。不确定先调 onchainos_market_supported_chain"), tokenAddress: z.string().describe("代币合约地址(小写)。主链币传空字符串 ''。⚠️ 不知道地址 → 先调 onchainos_token_search"), timeFrame: z.enum(["1","2","3","4"]).optional().describe("1=24h 2=72h 3=7d 4=30d") },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async (params) => { if(!auth) return AUTH_REQUIRED("READ"); try { const q: Record<string,string>={}; for(const [k,v] of Object.entries(params)) if(v!==undefined) q[k]=v; return toResult(await marketApi.socialVibeTimeline(auth, q)); } catch(e) { return toError(e); } },
+  );
+
+  server.tool("onchainos_social_vibe_top_kols",
+    "链上-分析 | 获取热门 KOL 列表【场景:查讨论这个代币的KOL】",
+    { chainIndex: z.string().describe("链ID(字符串)。如 '1'=ETH '501'=Solana。不确定先调 onchainos_market_supported_chain"), tokenAddress: z.string().describe("代币合约地址(小写)。主链币传空字符串 ''。⚠️ 不知道地址 → 先调 onchainos_token_search"), sortBy: z.enum(["1","2","3"]).optional().describe("1=互动量 2=提及数 3=曝光量"), timeFrame: z.enum(["1","2","3","4"]).optional(), limit: z.string().optional() },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async (params) => { if(!auth) return AUTH_REQUIRED("READ"); try { const q: Record<string,string>={}; for(const [k,v] of Object.entries(params)) if(v!==undefined) q[k]=v; return toResult(await marketApi.socialVibeTopKols(auth, q)); } catch(e) { return toError(e); } },
+  );
+
 }

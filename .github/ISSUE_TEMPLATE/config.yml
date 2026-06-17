@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: hchain-skills 文档
+    url: https://github.com/hwalletvip888-h/hchain-skills#readme
+    about: 查看项目文档和 Agent 操作指南
+  - name: 功能请求
+    url: https://github.com/hwalletvip888-h/hchain-skills/discussions
+    about: 在 Discussions 中提出新功能建议

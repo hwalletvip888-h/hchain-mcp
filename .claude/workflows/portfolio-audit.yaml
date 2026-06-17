@@ -1,0 +1,148 @@
+# hchain 持仓审计流水线
+# 使用: /workflow portfolio-audit '{"chains":["1","56","501"],"deep_scan":true}'
+
+name: portfolio-audit
+version: "1.0"
+description: 全链持仓审计 — 余额汇总 + 逐代币风险扫描 + 风险矩阵
+timeout_seconds: 600
+max_continuations: 2
+
+nodes:
+  # ===== 阶段 1: 并行获取所有链余额 =====
+  - id: balance-eth
+    agent: portfolio-tracker
+    label: ETH链余额
+    action: all_tokens
+    params:
+      chain: "1"
+    parallel: true
+    depends_on: []
+    timeout: 30
+
+  - id: balance-bsc
+    agent: portfolio-tracker
+    label: BSC链余额
+    action: all_tokens
+    params:
+      chain: "56"
+    parallel: true
+    depends_on: []
+    timeout: 30
+
+  - id: balance-sol
+    agent: portfolio-tracker
+    label: Solana链余额
+    action: all_tokens
+    params:
+      chain: "501"
+    parallel: true
+    depends_on: []
+    timeout: 30
+
+  - id: balance-base
+    agent: portfolio-tracker
+    label: Base链余额
+    action: all_tokens
+    params:
+      chain: "8453"
+    parallel: true
+    depends_on: []
+    timeout: 30
+
+  - id: balance-arb
+    agent: portfolio-tracker
+    label: Arbitrum链余额
+    action: all_tokens
+    params:
+      chain: "42161"
+    parallel: true
+    depends_on: []
+    timeout: 30
+
+  - id: total-value
+    agent: portfolio-tracker
+    label: 总资产估值
+    action: total_value
+    parallel: true
+    depends_on: []
+    timeout: 20
+
+  # ===== 阶段 2: 聚合持仓列表 =====
+  - id: aggregate-holdings
+    agent: orchestrator
+    label: 聚合持仓
+    action: aggregate
+    params:
+      sources: [balance-eth, balance-bsc, balance-sol, balance-base, balance-arb]
+    depends_on: [balance-eth, balance-bsc, balance-sol, balance-base, balance-arb, total-value]
+    timeout: 30
+    output:
+      all_tokens: "list of {chain, address, symbol, balance, value_usd}"
+      total_value_usd: "{{total-value.total_usd}}"
+
+  # ===== 阶段 3: 并行风险扫描所有持仓 =====
+  # 对聚合后的每个代币并行扫描（最多同时5个）
+  - id: risk-scan
+    agent: risk-assessor
+    label: 批量风险扫描
+    action: batch_scan
+    params:
+      tokens: "{{aggregate-holdings.all_tokens}}"
+      max_parallel: 5
+    depends_on: [aggregate-holdings]
+    timeout: 300
+    fallback:
+      on_timeout: "partial_results"
+
+  # ===== 阶段 4: 生成风险矩阵 =====
+  - id: risk-matrix
+    agent: orchestrator
+    label: 风险矩阵
+    action: generate_report
+    params:
+      holdings: "{{aggregate-holdings}}"
+      risk_data: "{{risk-scan}}"
+    depends_on: [risk-scan]
+    timeout: 30
+    output_template: |
+      # 📊 hchain 持仓审计报告
+
+      ## 💰 总资产: ${{total-value.total_usd}}
+
+      ## 📋 持仓明细
+      | 链 | 代币 | 数量 | 价值 | 风险评分 | 等级 |
+      |------|------|------|------|:---:|:---:|
+      {{#each holdings}}
+      | {{chain}} | {{symbol}} | {{balance}} | ${{value_usd}} | {{risk_score}} | {{risk_level}} |
+      {{/each}}
+
+      ## 🚨 风险警报
+      {{#each risk_data.red_flags}}
+      - ⚠️ {{token_symbol}}: {{reason}}
+      {{/each}}
+
+      ## 📊 风险分布
+      - 🟢 安全 (0-30): {{safe_count}} 个代币
+      - 🟡 注意 (31-50): {{warn_count}} 个代币
+      - 🟠 警告 (51-70): {{alert_count}} 个代币
+      - 🔴 危险 (71-100): {{danger_count}} 个代币
+
+      ## 💡 建议操作
+      {{#each recommendations}}
+      - {{action}}: {{reason}}
+      {{/each}}
+
+  # ===== 阶段 5: 高风险告警门禁 =====
+  - id: alert-gate
+    agent: orchestrator
+    label: 高风险告警
+    action: evaluate
+    params:
+      danger_count: "{{risk-matrix.danger_count}}"
+      alert_count: "{{risk-matrix.alert_count}}"
+    depends_on: [risk-matrix]
+    gate:
+      condition: "danger_count == 0"
+      on_fail: "ALERT_USER"
+      on_pass: "ALL_CLEAR"
+    timeout: 10
