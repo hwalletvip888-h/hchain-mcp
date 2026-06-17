@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.3.0 — 2026-06-17
+
+### Changed
+- **错误处理重构**: 新增 `OkxError` 结构化错误类，`toError()` 从字符串匹配改为精确错误码映射（20+ OKX 业务码 + 5 HTTP 状态码）
+- **WS 层修复**: 修复 `wsConnect` 消息监听器泄漏；`wsSubscribe`/`wsUnsubscribe` 新增 10s 超时；心跳定时器随断开清理
+- **安全加固**: 移除命令行 API Key 读取（`process.argv` 全局可见风险）；HTTP body 大小限制 10MB；Rate Limiter 支持 `X-Forwarded-For` 代理 IP
+- `help.ts` 版本号从硬编码改为 `package.json` 动态读取
+- 删除死代码 `fetchPrice()`（未被调用且吞错危险）
+
+### Fixed
+- `package.json` 仓库 URL 从 `hchain-skills` 修正为 `hchain-mcp`
+- Dockerfile 新增 `HEALTHCHECK` 指令
+- 测试更新：`balance/gateway/market/trade` 测试改用 `OkxError` 匹配新错误结构
+
 ## 1.2.1 — 2026-06-17
 
 ### Added
