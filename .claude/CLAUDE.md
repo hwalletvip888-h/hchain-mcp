@@ -1,6 +1,6 @@
 # hchain-skills — Agent 操作指南
 
-> 版本 2.3 · 专属 Agent 的链上全功能 MCP · 109 tools（含 13 个组合技能）+ **链上赚币：10 Agent + 7 命令 + 2 工作流**，超越官方 OnchainOS
+> 版本 2.4 · 专属 Agent 的链上全功能 MCP · 113 tools（含 18 个组合技能）+ **链上赚币：10 Agent + 7 命令 + 5 工作流**，超越官方 OnchainOS
 
 ---
 
@@ -114,6 +114,7 @@
 | "聪明钱排行榜" | `onchainos_leaderboard_list` |
 | "追踪某个地址" | `onchainos_address_tracker_trades` |
 | "分析这个地址的盈亏" | `onchainos_portfolio_overview` — 地址画像 |
+| "查钱包健康度" | `onchainos_skill_portfolio_health` — **钱包4维健康诊断** |
 
 ### 🏦 DeFi
 
@@ -121,10 +122,28 @@
 |--------|--------|
 | "有什么 DeFi 理财" | `onchainos_defi_search_products` — 搜索投资品 |
 | "这个产品的详情" | `onchainos_defi_product_detail` — 详情(APY/资产/状态) |
-| "申购/存款" | `onchainos_defi_enter` — 需先调 prepare_transaction |
+| "申购/存款/一键投资" | `onchainos_skill_defi_invest` — **DeFi一键投资管线** |
 | "赎回" | `onchainos_defi_exit` |
 | "领奖励" | `onchainos_defi_claim` |
 | "我的 DeFi 持仓" | `onchainos_defi_user_platform_list` |
+| "收益排名/哪个理财最赚" | `onchainos_skill_defi_yield_aggregate` — **收益聚合排名** |
+| "DeFi持仓分析" | `onchainos_skill_defi_portfolio` — **DeFi持仓深度分析** |
+
+### 🎯 意图交易
+
+| 用户说 | 调什么 |
+|--------|--------|
+| "意图模式兑换/拍卖兑换" | `onchainos_skill_intent_swap` — **意图交易管线** |
+| "提交意图订单" | `onchainos_intent_create_order` |
+| "追踪拍卖状态" | `onchainos_intent_order_status` / `onchainos_intent_auction_info` |
+
+### 💊 钱包健康
+
+| 用户说 | 调什么 |
+|--------|--------|
+| "检查钱包健康度" | `onchainos_skill_portfolio_health` — **钱包健康诊断(4维评分)** |
+| "分析地址盈亏" | `onchainos_portfolio_overview` — 地址画像 |
+| "近期收益记录" | `onchainos_portfolio_recent_pnl` / `onchainos_portfolio_token_latest_pnl` |
 
 ### 🧾 交易历史
 

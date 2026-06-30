@@ -50,10 +50,13 @@ nodes:
     action: evaluate
     depends_on: [risk-check]
     gate:
-      condition: "risk-check.total_score < 71"
-      on_fail: "REJECT"
-      on_warn: "CONFIRM"  # 51-70 分需用户确认
-      on_pass: "CONTINUE"
+      condition: "risk-check.total_score"
+      on_pass: "CONTINUE"    # 0-20 (LOW) → 正常继续
+      on_warn: "CONFIRM"     # 21-70 (MEDIUM/HIGH) → 需用户确认
+      on_fail: "REJECT"      # 71-100 (CRITICAL) → 自动拒绝
+    thresholds:
+      pass_max: 20
+      warn_max: 70
     timeout: 10
 
   # ===== 阶段 3: 交易构建 =====
@@ -96,6 +99,19 @@ nodes:
     validate:
       - field: simulation_passed
         rule: "equals true"
+
+  # ===== 阶段 3.5: 可选代码审查 =====
+  - id: code-review
+    agent: code-reviewer
+    label: 代码审查(可选)
+    params:
+      calldata: "{{build-simulate.calldata}}"
+      simulation: "{{build-simulate}}"
+    depends_on: [build-simulate]
+    run_on: success
+    fallback:
+      strategy: skip
+    timeout: 60
 
   # ===== 阶段 4: 人机确认 =====
   - id: human-confirm

@@ -52,7 +52,7 @@ metadata:
 ## Nonce 原理
 
 ```
-EVN 交易 nonce 从 0 递增，每确认一笔 +1
+EVM 交易 nonce 从 0 递增，每确认一笔 +1
 卡住 nonce=5 的交易 → nonce 6,7,8... 全部排队
 → 用相同 nonce=5 发送替换交易覆盖
 ```

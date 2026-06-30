@@ -4,9 +4,9 @@
       "command": "node",
       "args": ["C:\\Users\\CF\\Desktop\\hchain-mcp\\dist\\index.js"],
       "env": {
-        "OKX_API_KEY": "55086169-ef4d-4832-8d55-f60ca0acdfcf",
-        "OKX_SECRET_KEY": "080FD20B79CEB05267E5C88D8D63E61B",
-        "OKX_PASSPHRASE": "Yy133678."
+        "OKX_API_KEY": "YOUR_OKX_API_KEY",
+        "OKX_SECRET_KEY": "YOUR_OKX_SECRET_KEY",
+        "OKX_PASSPHRASE": "YOUR_OKX_PASSPHRASE"
       }
     }
   }

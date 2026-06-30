@@ -2,12 +2,18 @@
  * Onchain OS REST API 适配层
  * Base: https://web3.okx.com
  * 按官方文档逐端点对接，杜绝幻觉
+ *
+ * v2.4: 生产加固 — fetch 超时 + 重试 + 可配置日志
  */
 import crypto from "node:crypto";
 import type { Auth } from "./shared.js";
 import { OkxError } from "./shared.js";
 
 const BASE = "https://web3.okx.com";
+const FETCH_TIMEOUT = parseInt(process.env.OKX_API_TIMEOUT ?? "30000", 10);
+const MAX_RETRIES = parseInt(process.env.OKX_API_RETRIES ?? "2", 10);
+const RETRYABLE = new Set([429, 503, 504]);
+const LOGGING = process.env.OKX_API_LOGGING === "true";
 
 function ts(): string { return new Date().toISOString().replace(/(\.\d{3})\d*Z/, "$1Z"); }
 
@@ -35,11 +41,51 @@ async function request<T>(
     headers["OK-ACCESS-PASSPHRASE"] = opts.auth.passphrase;
   }
 
-  const res = await fetch(BASE + fullPath, { method, headers, ...(bodyStr ? { body: bodyStr } : {}) });
-  if (!res.ok) { const t = await res.text().catch(() => ""); throw new OkxError(`HTTP_${res.status}`, t, res.status); }
-  const json = await res.json() as { code: string; msg?: string; data?: T };
-  if (json.code && json.code !== "0") throw new OkxError(json.code, json.msg ?? "");
-  return (json.data ?? json) as T;
+  let lastErr: Error | null = null;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
+    try {
+      const started = LOGGING ? Date.now() : 0;
+      const res = await fetch(BASE + fullPath, {
+        method, headers,
+        ...(bodyStr ? { body: bodyStr } : {}),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (LOGGING) console.error(`[OKX-API] ${method} ${fullPath} → ${res.status} (${Date.now() - started}ms)`);
+
+      if (!res.ok) {
+        const status = res.status;
+        const t = await res.text().catch(() => "");
+        lastErr = new OkxError(`HTTP_${status}`, t, status);
+        if (RETRYABLE.has(status) && attempt < MAX_RETRIES) {
+          const delay = Math.pow(2, attempt) * 500;
+          if (LOGGING) console.error(`[OKX-API] retry ${attempt + 1}/${MAX_RETRIES} in ${delay}ms`);
+          await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
+        throw lastErr;
+      }
+
+      const json = await res.json() as { code: string; msg?: string; data?: T };
+      if (json.code && json.code !== "0") throw new OkxError(json.code, json.msg ?? "");
+      return (json.data ?? json) as T;
+    } catch (e) {
+      clearTimeout(timeoutId);
+      if (e instanceof OkxError) throw e;
+      if (e instanceof DOMException && e.name === "AbortError") {
+        lastErr = new Error(`Request timeout after ${FETCH_TIMEOUT}ms: ${method} ${fullPath}`);
+        if (attempt < MAX_RETRIES) {
+          if (LOGGING) console.error(`[OKX-API] timeout retry ${attempt + 1}/${MAX_RETRIES}`);
+          continue;
+        }
+        throw lastErr;
+      }
+      throw e;
+    }
+  }
+  throw lastErr ?? new Error("Unexpected request failure");
 }
 
 // ═══════════════════════════════════════════════════════════════

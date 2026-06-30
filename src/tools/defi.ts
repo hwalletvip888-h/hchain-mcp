@@ -1,5 +1,5 @@
 /**
- * DeFi 模块 — CAT:[链上-分析]
+ * DeFi 模块 — CAT:[链上-DeFi]
  * 投资品查询: 链列表 + 协议 + 搜索 + 详情
  */
 import { z } from "zod";

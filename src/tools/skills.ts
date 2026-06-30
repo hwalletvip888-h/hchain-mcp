@@ -4,6 +4,7 @@
  * Phase 2: 交易全链路/风险检测/智能滑点/信号聚合/
  *          市场全景/跨链交换/条件单/交易加速/社媒叙事/
  *          批量兑换/Nonce管理/价格预警/Gas配置 — 一共 13 个 Skill
+ * Phase 3: DeFi投资/收益聚合/持仓分析/意图交易/钱包健康 — 新增 5 个 Skill (18 total)
  */
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -13,6 +14,8 @@ import {
   marketApi,
   intentApi,
   postTxApi,
+  defiApi,
+  balanceApi,
 } from "../adapters/onchainos.js";
 import { toResult, toError, AUTH_REQUIRED, errMsg } from "../adapters/shared.js";
 import type { Auth, NextStep } from "../adapters/shared.js";
@@ -1111,9 +1114,9 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
           .then(d => ({ step: "vibe", status: "ok" as const, data: d })),
         marketApi.socialNewsBySymbol(auth, { tokenSymbols: sym, limit: "5" })
           .then(d => ({ step: "news", status: "ok" as const, data: d })),
-        marketApi.socialVibeTopKols(auth, { chainIndex, tokenAddress: tokenContractAddress, sortBy: "engagement", timeFrame, limit: "5" })
+        marketApi.socialVibeTopKols(auth, { chainIndex, tokenAddress: tokenContractAddress, sortBy: "1", timeFrame, limit: "5" })
           .then(d => ({ step: "top_kols", status: "ok" as const, data: d })),
-        marketApi.socialSentimentRanking(auth, { timeFrame, sortBy: "volume", limit: "50" })
+        marketApi.socialSentimentRanking(auth, { timeFrame, sortBy: "1", limit: "50" })
           .then(d => ({ step: "ranking", status: "ok" as const, data: d })),
       ]);
 
@@ -1533,6 +1536,697 @@ export function registerSkillTools(server: McpServer, auth: Auth | null): void {
           { action: "用推荐 Gas 构建交易", tool: "onchainos_dex_swap", params: { chainIndex, gasLevel } },
           { action: "模拟交易确认 Gas 是否充足", tool: "onchainos_gateway_simulate" },
         ],
+      });
+    },
+  );
+
+  // ── 14. DeFi一键投资管线 ──────────────────────────────────
+
+  server.tool("onchainos_skill_defi_invest",
+    "链上-Skill | DeFi一键投资管线: 搜索→详情→准备→申购。📋 Agent 调用场景: 用户说'DeFi投资'/'存入赚币'/'理财申购'/'存款生息'/'质押'。自动搜索最优投资品→查详情→准备参数→返回申购calldata, 支持直接传 investmentId 跳过搜索",
+    {
+      chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '501'=Solana。⚠️ 不确定先调 onchainos_defi_supported_chains"),
+      tokenKeyword: z.string().describe("代币关键词(如 'USDC' 'ETH')。用于搜索投资品。⚠️ investmentId 提供时跳过搜索步骤"),
+      amount: z.string().regex(/^[0-9]+$/, "amount 必须是正整数字符串(含精度)").describe(
+        "投资数量(最小单位, 含精度 decimals)。" +
+        "⚠️ 不同代币精度不同: USDT(decimals=6)'1'=1000000, ETH(decimals=18)'1'=1000000000000000000。" +
+        "公式: amount = 人类可读数量 × 10^decimals。不确定 decimals 先调 onchainos_token_basic_info"
+      ),
+      userWalletAddress: z.string().describe("用户钱包地址"),
+      platformKeyword: z.string().optional().describe("协议关键词(如 'Aave' 'Compound')。可选, 缩小搜索范围"),
+      investmentId: z.string().optional().describe("已知投资品ID, 提供后跳过搜索步骤直接进入投资管线"),
+    },
+    { readOnlyHint: false, idempotentHint: false, destructiveHint: true },
+    async (params) => {
+      if (!auth) return AUTH_REQUIRED("TRADE");
+      const steps: StepResult[] = [];
+      const warnings: string[] = [];
+      const { chainIndex, tokenKeyword, amount, userWalletAddress, platformKeyword, investmentId: knownId } = params;
+
+      let invId = knownId;
+
+      // Step 1: Search (skipped if investmentId provided)
+      if (!invId) {
+        try {
+          const searchR = await defiApi.searchProducts(auth, {
+            tokenKeywordList: [tokenKeyword],
+            ...(platformKeyword ? { platformKeywordList: [platformKeyword] } : {}),
+            chainIndex,
+            pageNum: 1,
+          });
+          const list = Array.isArray(searchR) ? searchR : (searchR as any)?.dataList ?? (searchR as any)?.products ?? [];
+          if (list.length === 0) {
+            steps.push({ step: "search", status: "error", error: "未找到匹配的投资品" });
+            return toResult({ steps, summary: { status: "no_products_found", reason: `未找到链${chainIndex}上${tokenKeyword}的投资品, 请换个关键词或指定 investmentId` } });
+          }
+          invId = list[0].investmentId;
+          steps.push({ step: "search", status: "ok", data: { totalFound: list.length, selected: list[0].platformName ?? list[0].tokenSymbol, investmentId: invId } });
+        } catch (e) {
+          steps.push({ step: "search", status: "error", error: errMsg(e) });
+          return toResult({ steps, summary: { status: "failed", failedAt: "search", reason: "搜索投资品失败, 请尝试直接提供 investmentId" } });
+        }
+      } else {
+        steps.push({ step: "search", status: "skipped", warning: "已提供 investmentId, 跳过搜索" });
+      }
+
+      // Step 2: Product Detail
+      let productInfo: any = {};
+      try {
+        const detailR = await defiApi.productDetail(auth, invId!);
+        productInfo = detailR;
+        steps.push({ step: "product_detail", status: "ok", data: { apy: (detailR as any)?.apy, tvlUsd: (detailR as any)?.tvlUsd, platformName: (detailR as any)?.platformName, tokenSymbol: (detailR as any)?.tokenSymbol, isInvestable: (detailR as any)?.isInvestable } });
+      } catch (e) {
+        steps.push({ step: "product_detail", status: "error", error: errMsg(e) });
+        return toResult({ steps, summary: { status: "failed", failedAt: "product_detail", reason: "获取投资品详情失败" } });
+      }
+
+      if ((productInfo as any)?.isInvestable === false) {
+        warnings.push("该投资品当前不可投资 (isInvestable=false)");
+      }
+
+      // Step 3: Rate Chart (APY trend, non-fatal)
+      try {
+        const chartR = await defiApi.rateChart(auth, invId!, "WEEK");
+        const points = Array.isArray(chartR) ? chartR : (chartR as any)?.dataList ?? [];
+        steps.push({ step: "rate_chart", status: "ok", data: { dataPoints: points.length, timeRange: "WEEK" } });
+      } catch (e) {
+        steps.push({ step: "rate_chart", status: "error", error: errMsg(e) });
+        warnings.push("APY趋势图获取失败, 不影响投资流程");
+      }
+
+      // Step 4: Prepare Transaction
+      let prepareData: any = {};
+      try {
+        prepareData = await defiApi.prepareTransaction(auth, invId!);
+        steps.push({ step: "prepare", status: "ok", data: { investTokens: (prepareData as any)?.investWithTokenList?.length ?? 0 } });
+      } catch (e) {
+        steps.push({ step: "prepare", status: "error", error: errMsg(e) });
+        return toResult({ steps, summary: { status: "failed", failedAt: "prepare", reason: "准备交易参数失败" } });
+      }
+
+      // Step 5: Enter (generate calldata)
+      let enterRaw: any;
+      try {
+        const body: Record<string, unknown> = {
+          investmentId: invId!,
+          address: userWalletAddress,
+          investWithTokenList: (prepareData as any)?.investWithTokenList ?? [],
+          amount,
+        };
+        enterRaw = await defiApi.enter(auth, body);
+        const dataList = (enterRaw as any)?.dataList ?? [];
+        steps.push({ step: "enter", status: "ok", data: { txCount: dataList.length, types: dataList.map((d: any) => d.type) } });
+      } catch (e) {
+        steps.push({ step: "enter", status: "error", error: errMsg(e) });
+        return toResult({ steps, summary: { status: "failed", failedAt: "enter", reason: "申购交易构建失败" } });
+      }
+
+      const okCount = steps.filter(s => s.status === "ok" || s.status === "skipped").length;
+      return toResult({
+        steps,
+        calldata: enterRaw,
+        productInfo: {
+          investmentId: invId,
+          platformName: (productInfo as any)?.platformName,
+          tokenSymbol: (productInfo as any)?.tokenSymbol,
+          apy: (productInfo as any)?.apy,
+          tvlUsd: (productInfo as any)?.tvlUsd,
+        },
+        summary: { status: "ready", totalSteps: steps.length, okSteps: okCount, message: "申购calldata已生成, 请用户签名后广播" },
+      }, {
+        warnings: warnings.length ? warnings : undefined,
+        nextSteps: [
+          { action: "用户签名 calldata 列表中的每笔交易", tool: "—", condition: "用私钥/钱包对 dataList 中每笔 tx 签名" },
+          { action: "逐笔广播签名交易", tool: "onchainos_gateway_broadcast", params: { chainIndex, address: userWalletAddress } },
+          { action: "查看 DeFi 持仓", tool: "onchainos_skill_defi_portfolio", params: { address: userWalletAddress, chains: chainIndex } },
+        ],
+      });
+    },
+  );
+
+  // ── 15. DeFi收益聚合器 ──────────────────────────────────
+
+  server.tool("onchainos_skill_defi_yield_aggregate",
+    "链上-Skill | DeFi收益聚合器: 搜索→并发详情→排名, 找到最高APY。📋 Agent 调用场景: 用户说'哪个收益高'/'找最高APY'/'对比收益'/'收益排行'/'理财推荐'/'存哪里收益高'。自动搜索→拉取详情→评分排序, 返回综合排名+风险标注",
+    {
+      chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '501'=Solana。⚠️ 不确定先调 onchainos_defi_supported_chains"),
+      tokenKeyword: z.string().optional().describe("代币关键词(如 'USDC' 'ETH')。不传则返回该链所有顶级收益产品"),
+      platformKeyword: z.string().optional().describe("协议关键词(如 'Aave' 'Compound')。可选, 缩小搜索范围"),
+      productGroup: z.enum(["SINGLE_EARN", "DEX_POOL", "LENDING"]).optional().default("SINGLE_EARN").describe("产品类型, 默认 SINGLE_EARN (活期理财)"),
+    },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async ({ chainIndex, tokenKeyword, platformKeyword, productGroup }) => {
+      if (!auth) return AUTH_REQUIRED("READ");
+      const steps: StepResult[] = [];
+      const warnings: string[] = [];
+
+      // Step 1: Search products
+      let productList: any[] = [];
+      try {
+        const searchR = await defiApi.searchProducts(auth, {
+          tokenKeywordList: tokenKeyword ? [tokenKeyword] : [],
+          ...(platformKeyword ? { platformKeywordList: [platformKeyword] } : {}),
+          chainIndex,
+          productGroup: productGroup ?? "SINGLE_EARN",
+          pageNum: 1,
+        });
+        productList = Array.isArray(searchR) ? searchR : (searchR as any)?.dataList ?? (searchR as any)?.products ?? [];
+        steps.push({ step: "search", status: "ok", data: { totalFound: productList.length, chainIndex, productGroup } });
+      } catch (e) {
+        steps.push({ step: "search", status: "error", error: errMsg(e) });
+        return toResult({ steps, rankedProducts: [], summary: { status: "failed", reason: "搜索投资品失败" } });
+      }
+
+      if (productList.length === 0) {
+        return toResult({ steps, rankedProducts: [], summary: { status: "empty", message: `链${chainIndex}暂无匹配的${productGroup}产品` } });
+      }
+
+      // Take top 10 by APY (from search results)
+      const top10 = productList.slice(0, 10);
+      type ProductInfo = { investmentId: string; apy: number; tvlUsd: number; platformName: string; tokenSymbol: string; isInvestable: boolean; feeRate: number; status: string; details?: any };
+      const enriched: ProductInfo[] = [];
+
+      // Step 2: Parallel fetch product details (chunked 5)
+      const chunkSize = 5;
+      for (let i = 0; i < top10.length; i += chunkSize) {
+        const chunk = top10.slice(i, i + chunkSize);
+        const chunkResults = await Promise.allSettled(
+          chunk.map(async (p) => {
+            const detail = await defiApi.productDetail(auth, p.investmentId);
+            return { investmentId: p.investmentId, detail };
+          }),
+        );
+        for (const r of chunkResults) {
+          if (r.status === "fulfilled") {
+            const d = r.value.detail as any;
+            enriched.push({
+              investmentId: r.value.investmentId,
+              apy: parseFloat(d?.apy ?? "0") || 0,
+              tvlUsd: parseFloat(d?.tvlUsd ?? "0") || 0,
+              platformName: d?.platformName ?? "Unknown",
+              tokenSymbol: d?.tokenSymbol ?? "Unknown",
+              isInvestable: d?.isInvestable !== false,
+              feeRate: parseFloat(d?.feeRate ?? d?.fee ?? "0") || 0,
+              status: d?.status ?? "active",
+              details: d,
+            });
+          }
+        }
+      }
+      steps.push({ step: "product_details", status: "ok", data: { fetched: enriched.length, failed: top10.length - enriched.length } });
+      if (enriched.length === 0) {
+        steps.push({ step: "detail", status: "error", error: "所有投资品详情获取失败" });
+        return toResult({ steps, rankedProducts: [], summary: { status: "failed", reason: "无法获取任何投资品详情" } });
+      }
+
+      // Step 3: Rate charts for top 3 (non-fatal)
+      const top3ByApy = [...enriched].sort((a, b) => b.apy - a.apy).slice(0, 3);
+      const trendMap: Record<string, string> = {};
+      for (const p of top3ByApy) {
+        try {
+          const chartR = await defiApi.rateChart(auth, p.investmentId, "WEEK");
+          const pts = Array.isArray(chartR) ? chartR : (chartR as any)?.dataList ?? [];
+          if (pts.length >= 3) {
+            const recent = pts.slice(-3).map((pt: any) => parseFloat(pt?.value ?? pt?.apy ?? "0"));
+            if (recent[2] > recent[0] * 1.02) trendMap[p.investmentId] = "rising";
+            else if (recent[2] < recent[0] * 0.98) trendMap[p.investmentId] = "declining";
+            else trendMap[p.investmentId] = "stable";
+          } else {
+            trendMap[p.investmentId] = "unknown";
+          }
+        } catch {
+          trendMap[p.investmentId] = "unknown";
+        }
+      }
+      steps.push({ step: "rate_charts", status: "ok", data: { chartsFetched: Object.keys(trendMap).length } });
+
+      // Step 4: Score & rank
+      const maxApy = Math.max(...enriched.map(p => p.apy), 0.01);
+      const maxTvl = Math.max(...enriched.map(p => p.tvlUsd), 1);
+      const MAJOR_PLATFORMS = new Set(["aave", "compound", "lido", "uniswap", "pancakeswap", "curve", "maker", "convex", "yearn", "balancer"]);
+
+      const ranked = enriched.map(p => {
+        // APY score (0-50)
+        const apyScore = Math.min((p.apy / maxApy) * 50, 50);
+        // TVL score (0-20)
+        const tvlScore = Math.min((p.tvlUsd / maxTvl) * 20, 20);
+        // Platform reputation (0-15)
+        const platLower = p.platformName.toLowerCase();
+        const isMajor = Array.from(MAJOR_PLATFORMS).some(mp => platLower.includes(mp));
+        const platformScore = isMajor ? 15 : (p.platformName !== "Unknown" ? 10 : 5);
+        // Rate trend (0-10)
+        const trend = trendMap[p.investmentId] ?? "unknown";
+        const trendScore = trend === "rising" ? 10 : trend === "stable" ? 5 : trend === "declining" ? 0 : 5;
+        // Investability (0-5)
+        const investScore = p.isInvestable ? 5 : 0;
+        // Risk flags
+        const riskFlags: string[] = [];
+        if (p.feeRate > 5) riskFlags.push(`高费率 ${p.feeRate}%`);
+        if (p.tvlUsd < 10000) riskFlags.push(`低TVL $${p.tvlUsd.toFixed(0)}`);
+        if (p.status !== "active") riskFlags.push(`状态: ${p.status}`);
+        if (!p.isInvestable) riskFlags.push("当前不可投资");
+
+        const compositeScore = Math.round(apyScore + tvlScore + platformScore + trendScore + investScore);
+        return {
+          investmentId: p.investmentId,
+          platformName: p.platformName,
+          tokenSymbol: p.tokenSymbol,
+          apy: p.apy,
+          tvlUsd: p.tvlUsd,
+          compositeScore,
+          scoreBreakdown: { apy: Math.round(apyScore), tvl: Math.round(tvlScore), platform: platformScore, trend: trendScore, investable: investScore },
+          rateTrend: trend,
+          riskFlags,
+        };
+      }).sort((a, b) => b.compositeScore - a.compositeScore);
+
+      return toResult({
+        steps,
+        rankedProducts: ranked,
+        yieldSummary: {
+          chainIndex,
+          productGroup,
+          totalFound: productList.length,
+          analyzed: enriched.length,
+          avgApy: enriched.length > 0 ? +(enriched.reduce((s, p) => s + p.apy, 0) / enriched.length).toFixed(2) : 0,
+          bestApy: ranked.length > 0 ? ranked[0].apy : 0,
+          bestProduct: ranked.length > 0 ? `${ranked[0].platformName} - ${ranked[0].tokenSymbol} (${ranked[0].apy}% APY)` : "N/A",
+        },
+      }, {
+        warnings: warnings.length ? warnings : undefined,
+        nextSteps: ranked.length > 0
+          ? [
+            { action: "查看最佳投资品详情", tool: "onchainos_defi_product_detail", params: { investmentId: ranked[0].investmentId } },
+            { action: "一键投资", tool: "onchainos_skill_defi_invest", params: { chainIndex, investmentId: ranked[0].investmentId, tokenKeyword: ranked[0].tokenSymbol } },
+            { action: "查看 APY 趋势图", tool: "onchainos_defi_rate_chart", params: { investmentId: ranked[0].investmentId, timeRange: "MONTH" } },
+          ]
+          : [{ action: "换个关键词或链再搜", tool: "onchainos_defi_search_products" }],
+      });
+    },
+  );
+
+  // ── 16. DeFi持仓分析 ──────────────────────────────────
+
+  server.tool("onchainos_skill_defi_portfolio",
+    "链上-Skill | DeFi持仓分析: 全协议持仓总览+按平台细分+APY汇总。📋 Agent 调用场景: 用户说'我的DeFi持仓'/'理财持仓'/'存款分布'/'收益总览'/'查理财'/'DeFi portfolio'。自动拉取所有协议持仓→并发查明细→汇总总价值+各平台APY+Top投资品",
+    {
+      address: z.string().describe("钱包地址"),
+      chains: z.string().describe("链列表, 逗号分隔。如 '1,501,56' 或 'ethereum,solana,bsc'。⚠️ 不确定先调 onchainos_defi_supported_chains"),
+    },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async ({ address, chains }) => {
+      if (!auth) return AUTH_REQUIRED("READ");
+      const steps: StepResult[] = [];
+      const warnings: string[] = [];
+
+      // Step 1: Get platform list
+      let platformList: any[] = [];
+      try {
+        const chainList = chains.split(",").map(c => c.trim()).filter(Boolean);
+        const walletAddressList = chainList.map(ci => ({ chainIndex: ci, walletAddress: address }));
+        const listR = await defiApi.userPlatformList(auth, { walletAddressList });
+        platformList = Array.isArray(listR) ? listR : (listR as any)?.dataList ?? (listR as any)?.platforms ?? [];
+        steps.push({ step: "platform_list", status: "ok", data: { platformCount: platformList.length, chains: chainList.length } });
+      } catch (e) {
+        steps.push({ step: "platform_list", status: "error", error: errMsg(e) });
+        return toResult({ steps, summary: { status: "failed", reason: "获取协议持仓列表失败" } });
+      }
+
+      if (platformList.length === 0) {
+        return toResult({ steps, defiPortfolio: { totalValueUsd: 0, platformCount: 0, platforms: [], topInvestments: [], apySummary: {} }, summary: { status: "empty", message: "当前钱包无 DeFi 持仓" } });
+      }
+
+      // Step 2: Parallel fetch platform details (chunked 5)
+      type PlatformDetail = { platformName: string; chainIndex: string; totalValueUsd: number; investments: any[] };
+      const platformDetails: PlatformDetail[] = [];
+      const chunkSize = 5;
+      for (let i = 0; i < platformList.length; i += chunkSize) {
+        const chunk = platformList.slice(i, i + chunkSize);
+        const chunkResults = await Promise.allSettled(
+          chunk.map(async (p) => {
+            const analysisPlatformId = p.analysisPlatformId ?? p.platformId;
+            const detailR = await defiApi.userPlatformDetail(auth, {
+              walletAddressList: [{ chainIndex: p.chainIndex ?? chains.split(",")[0].trim(), walletAddress: address }],
+              analysisPlatformId,
+            });
+            return {
+              platformName: p.platformName ?? "Unknown",
+              chainIndex: p.chainIndex ?? chains.split(",")[0].trim(),
+              totalValueUsd: parseFloat(p.totalValueUsd ?? "0") || 0,
+              detail: detailR,
+            };
+          }),
+        );
+        for (const r of chunkResults) {
+          if (r.status === "fulfilled") {
+            const invs = Array.isArray((r.value.detail as any)?.investments) ? (r.value.detail as any).investments : [];
+            platformDetails.push({ ...r.value, investments: invs });
+          } else {
+            warnings.push(`平台 ${(r as any)?.value?.platformName ?? "Unknown"} 详情获取失败`);
+          }
+        }
+      }
+      steps.push({ step: "platform_details", status: "ok", data: { fetched: platformDetails.length, failed: platformList.length - platformDetails.length } });
+
+      // Step 3: Aggregate
+      let totalValue = 0;
+      const allInvestments: Array<{ platformName: string; tokenSymbol: string; valueUsd: number; apy: number }> = [];
+      for (const pd of platformDetails) {
+        totalValue += pd.totalValueUsd;
+        for (const inv of pd.investments) {
+          allInvestments.push({
+            platformName: pd.platformName,
+            tokenSymbol: inv.tokenSymbol ?? "Unknown",
+            valueUsd: parseFloat(inv.valueUsd ?? "0") || 0,
+            apy: parseFloat(inv.apy ?? inv.apr ?? "0") || 0,
+          });
+        }
+      }
+      const topInvestments = [...allInvestments].sort((a, b) => b.valueUsd - a.valueUsd).slice(0, 5);
+      const apyValues = allInvestments.filter(i => i.apy > 0).map(i => i.apy);
+      const apySummary = apyValues.length > 0
+        ? { avgApy: +(apyValues.reduce((s, v) => s + v, 0) / apyValues.length).toFixed(2), maxApy: Math.max(...apyValues), minApy: Math.min(...apyValues), countWithApy: apyValues.length }
+        : {};
+
+      return toResult({
+        steps,
+        defiPortfolio: {
+          totalValueUsd: totalValue,
+          platformCount: platformDetails.length,
+          investmentCount: allInvestments.length,
+          platforms: platformDetails.map(pd => ({
+            platformName: pd.platformName,
+            chainIndex: pd.chainIndex,
+            totalValueUsd: pd.totalValueUsd,
+            investmentCount: pd.investments.length,
+          })),
+          topInvestments,
+          apySummary,
+        },
+        summary: {
+          status: "ready",
+          totalPlatforms: platformDetails.length,
+          totalInvestments: allInvestments.length,
+          totalValueUsd: totalValue,
+        },
+      }, {
+        warnings: warnings.length ? warnings : undefined,
+        nextSteps: [
+          { action: "查看某平台详细仓位", tool: "onchainos_defi_position_detail", params: { address, platformId: "{{analysisPlatformId}}" } },
+          { action: "搜索更多投资机会", tool: "onchainos_skill_defi_yield_aggregate", params: { chainIndex: chains.split(",")[0].trim() } },
+        ],
+      });
+    },
+  );
+
+  // ── 17. 意图交易管线 ──────────────────────────────────
+
+  server.tool("onchainos_skill_intent_swap",
+    "链上-Skill | 意图交易管线: 意图报价→EIP-712签名→提交订单→Solver拍卖结算。📋 Agent 调用场景: 用户说'意图交易'/'intent swap'/'免Gas交易'/'MEV抗性兑换'/'拍卖交易'。与经典DEX不同: Solver竞价执行, 无需Gas(从兑换额扣), 抗MEV, 适合大额交易",
+    {
+      chainIndex: z.string().describe("链ID(字符串)。常见值: '1'=ETH '56'=BSC '501'=Solana '8453'=Base"),
+      fromTokenAddress: z.string().describe("卖出代币合约地址(小写)。主链币传空字符串''。⚠️ 不知道地址 → 先调 onchainos_token_search"),
+      toTokenAddress: z.string().describe("买入代币合约地址(小写)。主链币传''。⚠️ 不知道地址 → 先调 onchainos_token_search"),
+      amount: z.string().regex(/^[0-9]+$/, "amount 必须是正整数字符串(含精度)").describe(
+        "卖出数量(最小单位, 含精度)。公式: amount = 人类可读数量 × 10^decimals。" +
+        "⚠️ 不确定 decimals 先调 onchainos_token_basic_info"
+      ),
+      userWalletAddress: z.string().describe("用户钱包地址"),
+      slippagePercent: z.string().optional().default("1.0").refine(v => { const n = parseFloat(v); return !isNaN(n) && n >= 0.1 && n <= 50; }, "滑点范围 0.1~50%").describe("滑点百分比, 默认1.0"),
+    },
+    { readOnlyHint: false, idempotentHint: false, destructiveHint: true },
+    async (params) => {
+      if (!auth) return AUTH_REQUIRED("TRADE");
+      const steps: StepResult[] = [];
+      const { chainIndex, fromTokenAddress, toTokenAddress, amount, userWalletAddress, slippagePercent = "1.0" } = params;
+
+      // Step 1: Intent Quote
+      let quoteRaw: any;
+      try {
+        const qParams: Record<string, string> = {
+          chainIndex, fromTokenAddress, toTokenAddress, amount,
+          swapMode: "exactIn",
+          userWalletAddress,
+          slippagePercent,
+        };
+        quoteRaw = await intentApi.quote(auth, qParams);
+        const priceImpact = (quoteRaw as any)?.priceImpactPercent ?? "N/A";
+        const estGas = (quoteRaw as any)?.estimateGasFee ?? "N/A";
+        const routeInfo = (quoteRaw as any)?.routeInfo ?? (quoteRaw as any)?.route ?? [];
+        steps.push({
+          step: "intent_quote",
+          status: "ok",
+          data: { priceImpactPercent: priceImpact, estimateGasFee: estGas, routeSteps: Array.isArray(routeInfo) ? routeInfo.length : 1 },
+        });
+      } catch (e) {
+        steps.push({ step: "intent_quote", status: "error", error: errMsg(e) });
+        return toResult({ steps, summary: { status: "failed", failedAt: "intent_quote", reason: "意图报价失败, 该交易对可能不支持意图模式" } });
+      }
+
+      // Step 2: Check signData
+      const signData = (quoteRaw as any)?.signData;
+      if (!signData) {
+        steps.push({ step: "build", status: "error", error: "quote 未返回 signData, 意图报价不支持此交易对, 建议改用 onchainos_skill_trade_pipeline" });
+        return toResult({ steps, summary: { status: "failed", failedAt: "build", reason: "Intent报价未包含签名数据" } });
+      }
+      steps.push({ step: "build", status: "ok", data: { needEip712Signature: true, signDataFields: Object.keys(signData?.message ?? signData ?? {}) } });
+
+      return toResult({
+        steps,
+        intentInfo: { mode: "intent", auctionBased: true, mevResistant: true, noGasUpfront: true },
+        signData: {
+          ...signData,
+          _hint: "请用户用私钥对以上 signData 进行 EIP-712 签名, 得到 signature 后调用 onchainos_intent_create_order 提交订单",
+        },
+        quoteSummary: {
+          priceImpactPercent: (quoteRaw as any)?.priceImpactPercent,
+          estimateGasFee: (quoteRaw as any)?.estimateGasFee,
+          routeInfo: (quoteRaw as any)?.routeInfo ?? (quoteRaw as any)?.route,
+        },
+        summary: {
+          status: "awaiting_signature",
+          message: "Intent报价成功。用户需对signData进行EIP-712签名, 然后提交订单。Solver拍卖自动执行, 无需预付Gas",
+          workflow: [
+            "1. 用户对 signData 执行 EIP-712 签名(离链, 用钱包/私钥)",
+            "2. 调用 onchainos_intent_create_order 提交签名后的订单",
+            "3. 调用 onchainos_intent_order_status 追踪订单状态",
+            "4. Solver竞价执行 → 链上结算, 用户无需支付Gas(从兑换额中扣除)",
+          ],
+        },
+      }, {
+        nextSteps: [
+          { action: "用户对 signData 执行 EIP-712 签名", tool: "—", condition: "离链签名, 不需要广播" },
+          { action: "提交签名后的意图订单", tool: "onchainos_intent_create_order" },
+          { action: "追踪意图订单状态", tool: "onchainos_intent_order_status", params: { orderUid: "{{返回的 orderUid}}" } },
+          { action: "查看拍卖竞价详情", tool: "onchainos_intent_auction_info", params: { orderUid: "{{返回的 orderUid}}" } },
+        ],
+      });
+    },
+  );
+
+  // ── 18. 钱包健康诊断 ──────────────────────────────────
+
+  server.tool("onchainos_skill_portfolio_health",
+    "链上-Skill | 钱包健康诊断: 持仓分析→风险评估→PnL审计→综合健康评分。📋 Agent 调用场景: 用户说'钱包健康'/'持仓诊断'/'风险评估'/'资产体检'/'仓位检查'/'我的持仓健康吗'。自动拉取所有代币→批量检测风险→分析盈亏→输出0-100健康分+改进建议",
+    {
+      address: z.string().describe("钱包地址"),
+      chains: z.string().describe("链列表, 逗号分隔。如 '1,501,56' 或 'ethereum,solana,bsc'。⚠️ 不确定先调 onchainos_balance_supported_chain"),
+    },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async ({ address, chains }) => {
+      if (!auth) return AUTH_REQUIRED("READ");
+      const steps: StepResult[] = [];
+      const warnings: string[] = [];
+
+      // Step 1: Get all token balances
+      let tokenList: any[] = [];
+      let totalPortfolioValue = 0;
+      try {
+        const balR = await balanceApi.allTokenBalances(auth, address, chains);
+        const detailList = Array.isArray((balR as any)?.detailList) ? (balR as any).detailList : Array.isArray(balR) ? balR : [];
+        tokenList = detailList
+          .map((t: any) => ({
+            tokenContractAddress: t.tokenContractAddress ?? t.address ?? "",
+            chainIndex: t.chainIndex ?? chains.split(",")[0].trim(),
+            tokenSymbol: t.tokenSymbol ?? t.symbol ?? "Unknown",
+            balance: t.balance ?? "0",
+            priceUsd: parseFloat(t.priceUsd ?? t.price ?? "0") || 0,
+            valueUsd: parseFloat(t.valueUsd ?? t.value ?? "0") || 0,
+          }))
+          .filter((t: any) => t.valueUsd > 0);
+        totalPortfolioValue = tokenList.reduce((s: number, t: any) => s + t.valueUsd, 0);
+        steps.push({ step: "balances", status: "ok", data: { totalTokens: tokenList.length, totalValueUsd: totalPortfolioValue } });
+      } catch (e) {
+        steps.push({ step: "balances", status: "error", error: errMsg(e) });
+        return toResult({ steps, summary: { status: "failed", reason: "获取代币余额失败" } });
+      }
+
+      if (tokenList.length === 0) {
+        return toResult({
+          steps,
+          healthReport: { totalScore: 0, healthLevel: "EMPTY", breakdown: {}, portfolioStats: { totalValueUsd: 0, tokenCount: 0, chainCount: 0 }, riskFactors: [], recommendations: ["钱包为空, 无可分析的持仓"] },
+          summary: { status: "empty", message: "钱包无持仓, 无法诊断" },
+        });
+      }
+
+      // Step 2: Filter non-dust and sort by value
+      const nonDust = tokenList.filter((t: any) => t.valueUsd >= 1.0).sort((a: any, b: any) => b.valueUsd - a.valueUsd);
+      const topTokens = nonDust.slice(0, 20);
+      const dustCount = tokenList.length - nonDust.length;
+      if (nonDust.length === 0) {
+        warnings.push("所有代币价值均 < $1 (粉尘), 视为空钱包");
+        return toResult({
+          steps,
+          healthReport: { totalScore: 0, healthLevel: "EMPTY", breakdown: {}, portfolioStats: { totalValueUsd: totalPortfolioValue, tokenCount: tokenList.length, dustTokenCount: dustCount, chainCount: new Set(tokenList.map((t: any) => t.chainIndex)).size }, riskFactors: [], recommendations: ["所有持仓均为粉尘 (<$1), 无可分析的持仓"] },
+          summary: { status: "empty", message: "所有持仓均为粉尘, 视为空钱包" },
+        }, { warnings });
+      }
+
+      // Step 3: Batch risk check for top tokens (chunked 5)
+      type TokenRisk = { tokenContractAddress: string; chainIndex: string; tokenSymbol: string; valueUsd: number; riskLevel: string; isHoneypot: boolean; buyTax: number; sellTax: number };
+      const riskResults: TokenRisk[] = [];
+      if (nonDust.length > 0) {
+        const chunkSize = 5;
+        for (let i = 0; i < topTokens.length; i += chunkSize) {
+          const chunk = topTokens.slice(i, i + chunkSize);
+          const chunkResults = await Promise.allSettled(
+            chunk.map(async (t: any) => {
+              const info = await marketApi.tokenAdvancedInfo(auth, t.chainIndex, t.tokenContractAddress);
+              return { token: t, info: info as any };
+            }),
+          );
+          for (const r of chunkResults) {
+            if (r.status === "fulfilled") {
+              const { token, info } = r.value;
+              riskResults.push({
+                tokenContractAddress: token.tokenContractAddress,
+                chainIndex: token.chainIndex,
+                tokenSymbol: token.tokenSymbol,
+                valueUsd: token.valueUsd,
+                riskLevel: info?.riskLevel ?? "UNKNOWN",
+                isHoneypot: info?.isHoneypot || info?.isHoneyPot || false,
+                buyTax: parseFloat(info?.buyTax ?? "0") || 0,
+                sellTax: parseFloat(info?.sellTax ?? "0") || 0,
+              });
+            } else {
+              // Still include the token with unknown risk
+              const t = (r as any)?.value?.token ?? (chunk[0] as any);
+              riskResults.push({ tokenContractAddress: t?.tokenContractAddress ?? "", chainIndex: t?.chainIndex ?? "", tokenSymbol: t?.tokenSymbol ?? "Unknown", valueUsd: t?.valueUsd ?? 0, riskLevel: "UNKNOWN", isHoneypot: false, buyTax: 0, sellTax: 0 });
+            }
+          }
+        }
+      }
+      steps.push({ step: "risk_check", status: "ok", data: { tokensChecked: riskResults.length, highRiskCount: riskResults.filter(r => r.riskLevel === "HIGH" || r.riskLevel === "CRITICAL").length } });
+
+      // Step 4: Portfolio overview (PnL)
+      let pnlData: any = null;
+      try {
+        const firstChain = chains.split(",")[0].trim();
+        pnlData = await marketApi.portfolioOverview(auth, address, firstChain, "4"); // 1M
+        steps.push({ step: "pnl_overview", status: "ok", data: { realizedPnlUsd: (pnlData as any)?.realizedPnlUsd, unrealizedPnlUsd: (pnlData as any)?.unrealizedPnlUsd, winRate: (pnlData as any)?.winRate } });
+      } catch (e) {
+        steps.push({ step: "pnl_overview", status: "error", error: errMsg(e) });
+        warnings.push("盈亏数据获取失败, PnL维度使用默认中性分");
+      }
+
+      // Step 5: Compute health score
+      // Concentration score (0-30)
+      let concentrationScore = 30;
+      if (nonDust.length > 0) {
+        const top1Percent = (nonDust[0].valueUsd / (totalPortfolioValue || 1)) * 100;
+        if (top1Percent > 80) concentrationScore = 0;
+        else if (top1Percent > 50) concentrationScore = 10;
+        else if (top1Percent > 30) concentrationScore = 20;
+      }
+
+      // Risk exposure score (0-30)
+      let riskExposureScore = 30;
+      const riskFactors: Array<{ tokenSymbol: string; chainIndex: string; tokenContractAddress: string; riskLevel: string; isHoneypot: boolean; impact: string }> = [];
+      for (const r of riskResults) {
+        const pct = ((r.valueUsd / (totalPortfolioValue || 1)) * 100).toFixed(1);
+        if (r.isHoneypot) {
+          riskExposureScore = Math.max(0, riskExposureScore - 15);
+          riskFactors.push({ tokenSymbol: r.tokenSymbol, chainIndex: r.chainIndex, tokenContractAddress: r.tokenContractAddress, riskLevel: "HONEYPOT", isHoneypot: true, impact: `${pct}%` });
+        }
+        if (r.riskLevel === "HIGH" || r.riskLevel === "CRITICAL") {
+          riskExposureScore = Math.max(0, riskExposureScore - 10);
+          riskFactors.push({ tokenSymbol: r.tokenSymbol, chainIndex: r.chainIndex, tokenContractAddress: r.tokenContractAddress, riskLevel: r.riskLevel, isHoneypot: r.isHoneypot, impact: `${pct}%` });
+        } else if (r.riskLevel === "MEDIUM") {
+          riskExposureScore = Math.max(0, riskExposureScore - 5);
+        }
+        if (r.buyTax > 10 || r.sellTax > 10) {
+          riskExposureScore = Math.max(0, riskExposureScore - 5);
+        }
+      }
+
+      // PnL score (0-25)
+      let pnlScore = 15; // neutral default
+      if (pnlData) {
+        const realizedPnl = parseFloat((pnlData as any)?.realizedPnlUsd ?? "0");
+        const unrealizedPnl = parseFloat((pnlData as any)?.unrealizedPnlUsd ?? "0");
+        const winRate = parseFloat((pnlData as any)?.winRate ?? "0");
+        if (realizedPnl > 0 && winRate > 50) pnlScore = 25;
+        else if (unrealizedPnl > 0 || realizedPnl > 0) pnlScore = 20;
+        else if (winRate > 50) pnlScore = 15;
+        else if (realizedPnl + unrealizedPnl > -(totalPortfolioValue * 0.1)) pnlScore = 10;
+        else pnlScore = 0;
+      }
+
+      // Diversity score (0-15)
+      let diversityScore = 5;
+      try {
+        const chainSet = new Set(tokenList.map((t: any) => t.chainIndex));
+        const chainCount = chainSet.size;
+        if (chainCount >= 3) diversityScore = 15;
+        else if (chainCount >= 2) diversityScore = 10;
+      } catch { /* keep default */ }
+
+      const totalScore = concentrationScore + riskExposureScore + pnlScore + diversityScore;
+      const healthLevel = totalScore >= 80 ? "EXCELLENT" : totalScore >= 60 ? "GOOD" : totalScore >= 40 ? "FAIR" : totalScore >= 20 ? "POOR" : "CRITICAL";
+
+      // Generate recommendations
+      const recs: string[] = [];
+      if (concentrationScore < 15) recs.push("持仓过度集中于单一资产, 建议分散投资");
+      if (riskExposureScore < 15) recs.push("高风险代币占比过高, 建议减仓或换仓");
+      if (pnlScore < 10) recs.push("近期盈亏不佳, 建议审视交易策略");
+      if (diversityScore < 10) recs.push("建议跨链分散资产以降低单链风险");
+
+      return toResult({
+        steps,
+        healthReport: {
+          totalScore,
+          healthLevel,
+          levelDescription: {
+            EXCELLENT: "优秀 — 持仓健康, 风险可控, 盈利能力好",
+            GOOD: "良好 — 整体健康, 有小幅优化空间",
+            FAIR: "一般 — 存在一定风险或集中度问题",
+            POOR: "较差 — 需立即关注风险敞口",
+            CRITICAL: "危险 — 高风险资产占比过高, 强烈建议调整",
+          }[healthLevel],
+          breakdown: { concentrationScore, riskExposureScore, pnlScore, diversityScore },
+          portfolioStats: { totalValueUsd: totalPortfolioValue, tokenCount: tokenList.length, dustTokenCount: dustCount, chainCount: new Set(tokenList.map((t: any) => t.chainIndex)).size },
+          riskFactors: riskFactors.slice(0, 10),
+          concentration: nonDust.length > 0 ? { topTokenSymbol: nonDust[0].tokenSymbol, topTokenPercent: +((nonDust[0].valueUsd / (totalPortfolioValue || 1)) * 100).toFixed(1) } : null,
+          pnlSummary: pnlData ? {
+            realizedPnlUsd: (pnlData as any)?.realizedPnlUsd,
+            unrealizedPnlUsd: (pnlData as any)?.unrealizedPnlUsd,
+            winRate: (pnlData as any)?.winRate,
+            totalTxs: (pnlData as any)?.totalTxs,
+          } : null,
+          recommendations: recs.length > 0 ? recs : ["持仓健康, 暂无紧急建议"],
+        },
+        summary: { status: "ready", healthLevel, totalScore },
+      }, {
+        warnings: warnings.length ? warnings : undefined,
+        nextSteps: riskFactors.length > 0
+          ? [
+            { action: "深入分析高风险代币", tool: "onchainos_skill_risk_detect", params: { chainIndex: riskFactors[0]?.chainIndex ?? chains.split(",")[0].trim(), tokenContractAddress: riskFactors[0]?.tokenContractAddress } },
+            { action: "查看完整持仓明细", tool: "onchainos_balance_all_tokens", params: { address, chains } },
+          ]
+          : [
+            { action: "查看完整持仓明细", tool: "onchainos_balance_all_tokens", params: { address, chains } },
+            { action: "搜索DeFi投资机会", tool: "onchainos_skill_defi_yield_aggregate" },
+          ],
       });
     },
   );

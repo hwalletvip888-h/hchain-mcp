@@ -63,6 +63,11 @@ const ERROR_MAP: Record<string, { code: string; message: string; fix: string; re
   "HTTP_429": { code: "RATE_LIMITED", message: "超出频率限制", fix: "请等待 1-2 秒后重试", retryAfter: 1000 },
   "HTTP_500": { code: "SYSTEM_ERROR", message: "系统错误", fix: "不建议重试" },
   "HTTP_503": { code: "UNAVAILABLE", message: "服务暂时不可用", fix: "请等待 5 秒后重试", retryAfter: 5000 },
+  "HTTP_401": { code: "AUTH_ERROR", message: "需要进行身份验证", fix: "请检查 OKX_API_KEY / OKX_SECRET_KEY / OKX_PASSPHRASE 是否正确" },
+  "HTTP_403": { code: "FORBIDDEN", message: "没有权限访问此资源", fix: "请检查 API Key 是否具有所需权限范围" },
+  "HTTP_404": { code: "NOT_FOUND", message: "请求的资源不存在", fix: "请检查 API 路径或参数是否正确" },
+  "HTTP_409": { code: "CONFLICT", message: "请求与当前状态冲突", fix: "请稍后重试或检查请求参数" },
+  "HTTP_504": { code: "GATEWAY_TIMEOUT", message: "网关超时", fix: "请等待几秒后重试", retryAfter: 5000 },
 };
 
 // ── errMsg — 统一错误消息提取 ────────────────────────────────

@@ -2,8 +2,8 @@
 # 使用: /workflow research-pipeline '{"token":"0x...","chain":"1"}'
 
 name: research-pipeline
-version: "1.0"
-description: 代币深度调研 — 并行行情+安全+社媒+信号 → 综合评级
+version: "1.1"
+description: 代币深度调研 — 并行行情+安全+社媒+信号 → 综合评级 (含错误容错)
 timeout_seconds: 300
 max_continuations: 2
 
@@ -19,6 +19,13 @@ nodes:
     parallel: true
     depends_on: []
     timeout: 90
+    fallback:
+      strategy: skip
+      default_value:
+        price: { current: "N/A", change_24h: "N/A" }
+        candles: { trend: "N/A" }
+        token: { symbol: "{{args.token}}", name: "Unknown", chain: "{{args.chain}}" }
+        liquidity: { total_usd: "N/A" }
 
   - id: risk-data
     agent: risk-assessor
@@ -29,6 +36,16 @@ nodes:
     parallel: true
     depends_on: []
     timeout: 120
+    fallback:
+      strategy: skip
+      default_value:
+        total_score: -1
+        level: "数据不可用"
+        breakdown:
+          contract_security: { score: -1, issues: "查询失败" }
+          liquidity: { score: -1, locked: "N/A" }
+          holder_distribution: { score: -1, top10_pct: "N/A" }
+          trading_behavior: { score: -1, bundle_detected: "N/A" }
 
   - id: social-data
     agent: social-analyst
@@ -38,6 +55,12 @@ nodes:
     parallel: true
     depends_on: []
     timeout: 60
+    fallback:
+      strategy: skip
+      default_value:
+        sentiment: { score: "N/A", level: "N/A", trend: "N/A" }
+        hot_topics: "数据不可用"
+        kol_mentions: "N/A"
 
   - id: signal-data
     agent: signal-scout
@@ -48,6 +71,10 @@ nodes:
     parallel: true
     depends_on: []
     timeout: 60
+    fallback:
+      strategy: skip
+      default_value:
+        signals: [{ strength: "N/A", reason: "信号数据不可用" }]
 
   # ===== 阶段 2: 综合评级 =====
   - id: aggregate
@@ -91,5 +118,13 @@ nodes:
       - 信号强度: {{signal-data.signals.0.strength}}
       - 原因: {{signal-data.signals.0.reason}}
 
-      ## 🏆 综合评级: [RATING]
-      ## 💡 操作建议: [RECOMMENDATION]
+      ## 🏆 综合评级
+      - 安全分: {{risk-data.total_score}}/100 → 等级: {{risk-data.level}}
+      - 行情趋势: {{market-data.candles.trend}}
+      - 市场情绪: {{social-data.sentiment.level}}
+      - 信号质量: {{signal-data.signals.0.strength}}
+
+      ## 💡 操作建议
+      综合安全评分({{risk-data.total_score}})、行情趋势({{market-data.candles.trend}})、
+      社媒热度({{social-data.sentiment.level}})和聪明钱信号({{signal-data.signals.0.strength}})，
+      建议根据风险偏好和仓位管理自行判断。如风险分<21可考虑正常操作，21-50建议小仓位，51-70需谨慎，>70建议规避。

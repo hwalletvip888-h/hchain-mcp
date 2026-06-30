@@ -22,7 +22,7 @@ export function registerHelpTools(server: McpServer, auth: Auth | null): void {
         // 1. 名片
         name: "链上赚币",
         version,
-        tools: 109,
+        tools: 113,
         chains: "ETH BSC Solana Base Arbitrum Polygon Sui TON Avalanche 等40+",
         engine: "10个专业Agent分工协作 — Orchestrator自动路由",
 
@@ -37,7 +37,10 @@ export function registerHelpTools(server: McpServer, auth: Auth | null): void {
           { icon: "🌉", scene: "跨链兑换 (Intent/Direct)", tool: "onchainos_skill_crosschain_swap" },
           { icon: "🎯", scene: "限价单·止损单", tool: "onchainos_skill_conditional_order" },
           { icon: "📡", scene: "聪明钱信号·新币扫描", tool: "onchainos_skill_signal_aggregate / scan" },
-          { icon: "🏦", scene: "DeFi理财·申购赎回", tool: "onchainos_defi_*" },
+          { icon: "🏦", scene: "DeFi理财·申购赎回", tool: "onchainos_defi_* / skill_defi_invest" },
+          { icon: "📈", scene: "DeFi收益排名·持仓分析", tool: "onchainos_skill_defi_yield_aggregate / portfolio" },
+          { icon: "🎯", scene: "意图交易·拍卖结算", tool: "onchainos_skill_intent_swap" },
+          { icon: "💊", scene: "钱包健康诊断·盈亏分析", tool: "onchainos_skill_portfolio_health" },
           { icon: "📰", scene: "社媒情绪·新闻·KOL", tool: "onchainos_skill_social_narrative" },
           { icon: "⚡", scene: "Gas配置·交易加速", tool: "onchainos_skill_gas_configurator / tx_accelerator" },
           { icon: "📋", scene: "交易历史·持仓明细", tool: "onchainos_transaction_* / balance_*" },

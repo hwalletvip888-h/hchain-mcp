@@ -6,24 +6,26 @@ description: 持仓监控 — 总资产、各链分布、盈亏一目了然
 # /monitor — 持仓监控
 
 全面监控钱包持仓状态。
+用法: `/monitor [all|chains|txns] <wallet_address>`
 
 ## 参数
 - `$1`: 监控范围 (all/chains/txns) (可选，默认 all)
+- `$2`: 钱包地址 (必填，用于查询链上资产)
 
 ## 监控内容
 
 ### all — 全面监控 (默认)
 并行启动:
-- `portfolio-tracker` → 总资产 + 各链分布
-- `defi-strategist` → DeFi 持仓 + 待领收益
+- `portfolio-tracker` → 总资产 + 各链分布 (钱包: $2)
+- `defi-strategist` → DeFi 持仓 + 待领收益 (钱包: $2)
 - `signal-scout` → 持仓币种的最新信号
 
 ### chains — 链上余额
-- `portfolio-tracker` → 逐链查询余额和代币分布
+- `portfolio-tracker` → 逐链查询余额和代币分布 (钱包: $2)
 - 输出: 按链排列的资产表
 
 ### txns — 最近交易
-- `portfolio-tracker` → 最近 20 笔交易
+- `portfolio-tracker` → 最近 20 笔交易 (钱包: $2)
 - 输出: 交易历史（含状态、Gas、盈亏）
 
 ## 输出格式

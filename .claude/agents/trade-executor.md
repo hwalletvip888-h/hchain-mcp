@@ -32,6 +32,11 @@ tools:
   - onchainos_intent_cancel_sign_data
   - onchainos_intent_cancel_order
   - onchainos_intent_auction_info
+  - onchainos_balance_supported_chain
+  - onchainos_balance_total_value
+  - onchainos_balance_all_tokens
+  - onchainos_balance_specific_token
+  - onchainos_token_search
 ---
 
 # 💱 Trade Executor — 交易执行Agent

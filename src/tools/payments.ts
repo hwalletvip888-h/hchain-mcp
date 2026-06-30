@@ -103,4 +103,50 @@ export function registerPaymentsTools(server: McpServer, auth: Auth | null): voi
     async () => { if(!auth) return AUTH_REQUIRED("READ"); try { return toResult(await paymentsApi.supported(auth)); } catch(e) { return toError(e); } },
   );
 
+  // ── x402 协议（Agent-to-Agent 支付验证+链上结算）────────
+
+  server.tool("onchainos_payment_x402_verify",
+    "链上-支付 | x402验签 — 验证 EIP-3009 授权签名是否合法【场景:支付前校验买家签名有效性】",
+    {
+      authorization: z.string().describe("EIP-3009 授权 JSON 字符串"),
+      signature: z.string().describe("EIP-712 签名(0x前缀 hex)"),
+    },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async ({ authorization, signature }) => {
+      if(!auth) return AUTH_REQUIRED("READ");
+      try {
+        let authObj: unknown; try { authObj = JSON.parse(authorization); } catch { return toError(new Error("authorization 格式错误")); }
+        return toResult(await paymentsApi.verify(auth, { authorization: authObj, signature }));
+      } catch(e) { return toError(e); }
+    },
+  );
+
+  server.tool("onchainos_payment_x402_settle",
+    "链上-支付 | x402链上结算 — 将验证通过的支付提交到链上【场景:买家签名验证通过后执行链上转账】",
+    {
+      authorization: z.string().describe("已验证的 EIP-3009 授权 JSON"),
+      signature: z.string().describe("EIP-712 签名"),
+    },
+    { readOnlyHint: false, idempotentHint: false, destructiveHint: true },
+    async ({ authorization, signature }) => {
+      if(!auth) return AUTH_REQUIRED("TRADE");
+      try {
+        let authObj: unknown; try { authObj = JSON.parse(authorization); } catch { return toError(new Error("authorization 格式错误")); }
+        return toResult(await paymentsApi.settle(auth, { authorization: authObj, signature }));
+      } catch(e) { return toError(e); }
+    },
+  );
+
+  server.tool("onchainos_payment_x402_settle_status",
+    "链上-支付 | x402结算状态轮询 — 查询链上结算是否确认【场景:结算后确认链上到账】",
+    {
+      settleId: z.string().describe("结算ID, 从 settle 返回结果获取"),
+    },
+    { readOnlyHint: true, idempotentHint: true, destructiveHint: false },
+    async ({ settleId }) => {
+      if(!auth) return AUTH_REQUIRED("READ");
+      try { return toResult(await paymentsApi.settleStatus(auth, settleId)); } catch(e) { return toError(e); }
+    },
+  );
+
 }

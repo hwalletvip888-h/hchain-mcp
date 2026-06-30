@@ -1,7 +1,7 @@
 {
   "name": "hchain-skills",
-  "version": "1.4.2",
-  "description": "hchain-skills — AI-native multi-chain trading MCP Server (109 tools / 13 composite skills, beyond official OnchainOS)",
+  "version": "1.5.0",
+  "description": "hchain-skills — AI-native multi-chain trading MCP Server (116 tools / 18 composite skills, beyond official OnchainOS) — production-hardened",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -46,6 +46,10 @@
     "start:http": "node dist/http.js",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src/ --ext .ts",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\"",
     "prepublishOnly": "npm run build",
     "version": "git add -A src package.json package-lock.json",
     "postversion": "git push && git push --tags"
@@ -57,7 +61,11 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^3.1.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.5.0",
     "typescript": "^5.7.0",
+    "typescript-eslint": "^8.0.0",
     "vitest": "^3.1.0"
   }
 }

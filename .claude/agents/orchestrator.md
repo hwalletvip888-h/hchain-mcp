@@ -8,6 +8,10 @@ tools:
   - TaskCreate
   - TaskUpdate
   - Agent
+  - Read
+  - Grep
+  - Glob
+  - Bash
   - onchainos_help
 ---
 
