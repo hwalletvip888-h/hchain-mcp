@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("node:fs", () => ({
-  readFileSync: vi.fn(() => JSON.stringify({ version: "1.4.2", name: "hchain-skills" })),
+  readFileSync: vi.fn(() => JSON.stringify({ version: "1.5.0", name: "hchain-skills" })),
 }));
 
 import { registerHelpTools } from "../tools/help.js";
@@ -52,8 +52,8 @@ describe("registerHelpTools", () => {
     registerHelpTools(s as any, null);
     const r = parse(await s.tools[0].handler());
     expect(r.success).toBe(true);
-    expect(r.data.version).toBe("1.4.2");
-    expect(r.data.tools).toBe(113);
+    expect(r.data.version).toBe("1.5.0");
+    expect(r.data.tools).toBe(116);
     expect(r.data.name).toBe("链上赚币");
   });
 

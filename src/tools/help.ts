@@ -22,7 +22,7 @@ export function registerHelpTools(server: McpServer, auth: Auth | null): void {
         // 1. 名片
         name: "链上赚币",
         version,
-        tools: 113,
+        tools: 116,
         chains: "ETH BSC Solana Base Arbitrum Polygon Sui TON Avalanche 等40+",
         engine: "10个专业Agent分工协作 — Orchestrator自动路由",
 

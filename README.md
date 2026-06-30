@@ -5,9 +5,10 @@
 [![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen?style=flat-square)](https://nodejs.org)
 [![License](https://img.shields.io/npm/l/hchain-skills?style=flat-square)](LICENSE)
 
-> **AI 原生多链交易 MCP Server** — 109 个工具，让 AI Agent 拥有链上超能力
+> **AI 原生多链交易 MCP Server** — 116 个工具 + 18 个组合技能，让 AI Agent 拥有链上超能力
 >
 > 📦 双包同源：`hchain-skills`（主力）· `hchain-mcp`（覆盖旧引用）—— 两个包内容完全一致
+> 🔒 v1.5.0 生产级：307 测试 · WS 自动重连 · API 超时重试 · 结构化日志
 
 ---
 
@@ -186,19 +187,19 @@ Ethereum、BSC、Polygon、Arbitrum、Base、Optimism、Solana、Sui、TON、Ava
 
 ---
 
-## 📦 模块总览（109 tools）
+## 📦 模块总览（116 tools）
 
 | 模块 | 数量 | 内容 |
 |------|:---:|------|
-| 🔍 Market | 45 | 价格·K线·代币·信号·社媒 |
+| 🔍 Market | 45 | 价格·K线·代币·信号·社媒·Meme·持仓 |
 | 🏦 DeFi | 14 | 投资品·申购·赎回·持仓 |
 | 💱 Trade | 8 | 报价·授权·兑换·历史 |
 | 🎯 Intent | 6 | 意图订单·拍卖 |
 | 🌉 Gateway | 6 | Gas·模拟·广播 |
-| 💳 Payments | 5 | A2A/x402 支付 |
+| 💳 Payments | 8 | A2A/x402 支付 |
 | 💰 Balance | 4 | 多链余额 |
 | 📡 WS | 4 | WebSocket 实时推送 |
-| 🧠 Skills | 13 | 组合技能（交易管线/风控/跨链等） |
+| 🧠 Skills | 18 | 组合技能（交易/风控/跨链/DeFi/钱包健康等） |
 | 📜 History | 3 | 交易历史·详情 |
 | ❓ Help | 1 | 交互式导航 |
 
